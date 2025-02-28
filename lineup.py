@@ -702,8 +702,55 @@ with tab4:
             else:
                 st.success("All positions are properly assigned for each inning!")
                 st.info("Note: It's normal to have multiple players on the bench.")
+        
+        # Add individual game fairness analysis
+        st.subheader("Game Fielding Fairness")
+        
+        # Calculate fairness for the selected game
+        if selected_game in st.session_state.fielding_rotations:
+            # Create a fairness dataframe for this game
+            game_fairness = pd.DataFrame(
+                0, 
+                index=players["Player"], 
+                columns=["Infield", "Outfield", "Bench", "Total Innings"]
+            )
+            
+            # Get game details
+            game_info = st.session_state.schedule[st.session_state.schedule["Game #"] == selected_game].iloc[0]
+            innings = game_info["Innings"]
+            
+            # Process each inning
+            for inning in range(1, innings + 1):
+                inning_key = f"Inning {inning}"
                 
-        # Remind users about the fairness tab
+                if inning_key in st.session_state.fielding_rotations[selected_game]:
+                    positions = st.session_state.fielding_rotations[selected_game][inning_key]
+                    
+                    for p_idx, position in enumerate(positions):
+                        if p_idx < len(players):
+                            player = players.iloc[p_idx]["Player"]
+                            
+                            # Update total innings
+                            game_fairness.loc[player, "Total Innings"] += 1
+                            
+                            # Update position counts
+                            if position in INFIELD:
+                                game_fairness.loc[player, "Infield"] += 1
+                            elif position in OUTFIELD:
+                                game_fairness.loc[player, "Outfield"] += 1
+                            elif position in BENCH:
+                                game_fairness.loc[player, "Bench"] += 1
+            
+            # Calculate percentages
+            for col in ["Infield", "Outfield", "Bench"]:
+                game_fairness[f"{col} %"] = (game_fairness[col] / game_fairness["Total Innings"] * 100).round(1)
+            
+            # Filter out players with no innings
+            game_fairness = game_fairness[game_fairness["Total Innings"] > 0]
+            
+            # Display the table
+            st.dataframe(game_fairness[["Infield", "Outfield", "Bench", "Total Innings", "Infield %", "Outfield %", "Bench %"]])
+        
         st.info("💡 To see position distribution and fairness across all games, visit the 'Fielding Fairness' tab.")
 
 # Tab 5: Batting Fairness Analysis
