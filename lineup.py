@@ -21,6 +21,8 @@ if 'batting_orders' not in st.session_state:
     st.session_state.batting_orders = {}
 if 'fielding_rotations' not in st.session_state:
     st.session_state.fielding_rotations = {}
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = "Team Roster"
 
 # Define positions
 POSITIONS = ["Pitcher", "Catcher", "1B", "2B", "3B", "SS", "LF", "RF", "LC", "RC", "Bench"]
@@ -77,8 +79,9 @@ def analyze_batting_fairness():
         # Count the batting positions for each player across all games
         for game_id, batting_order in st.session_state.batting_orders.items():
             for i, player_idx in enumerate(batting_order, 1):
-                player = players.iloc[player_idx]["Player"]
-                batting_counts.loc[player, i] += 1
+                if i <= len(batting_counts.columns) and player_idx < len(players):
+                    player = players.iloc[player_idx]["Player"]
+                    batting_counts.loc[player, i] += 1
         
         return batting_counts
     return None
@@ -103,15 +106,16 @@ def analyze_fielding_fairness():
                     inning_key = f"Inning {inning}"
                     if inning_key in fielding_data:
                         for player_idx, position in enumerate(fielding_data[inning_key]):
-                            player = players.iloc[player_idx]["Player"]
-                            position_counts.loc[player, "Total Innings"] += 1
-                            
-                            if position in INFIELD:
-                                position_counts.loc[player, "Infield"] += 1
-                            elif position in OUTFIELD:
-                                position_counts.loc[player, "Outfield"] += 1
-                            elif position in BENCH:
-                                position_counts.loc[player, "Bench"] += 1
+                            if player_idx < len(players):
+                                player = players.iloc[player_idx]["Player"]
+                                position_counts.loc[player, "Total Innings"] += 1
+                                
+                                if position in INFIELD:
+                                    position_counts.loc[player, "Infield"] += 1
+                                elif position in OUTFIELD:
+                                    position_counts.loc[player, "Outfield"] += 1
+                                elif position in BENCH:
+                                    position_counts.loc[player, "Bench"] += 1
         
         # Calculate percentages
         for col in ["Infield", "Outfield", "Bench"]:
@@ -165,12 +169,13 @@ def generate_game_plan_pdf(game_id, game_info, batting_order, fielding_data, pla
     batting_data.append(["Order", "Player", "Jersey"])
     
     for i, player_idx in enumerate(batting_order, 1):
-        player = players.iloc[player_idx]
-        batting_data.append([
-            str(i), 
-            f"{player['First Name']} {player['Last Name']}", 
-            f"#{player['Jersey Number']}"
-        ])
+        if player_idx < len(players):
+            player = players.iloc[player_idx]
+            batting_data.append([
+                str(i), 
+                f"{player['First Name']} {player['Last Name']}", 
+                f"#{player['Jersey Number']}"
+            ])
     
     batting_table = Table(batting_data, colWidths=[0.5*inch, 2.5*inch, 0.75*inch])
     batting_table.setStyle(TableStyle([
@@ -326,11 +331,12 @@ def load_app_data(json_data):
     st.session_state.fielding_rotations = {int(k) if k.isdigit() else k: v for k, v in st.session_state.fielding_rotations.items()}
 
 # Main app layout
-st.title("⚾ Baseball Team Lineup Manager")
+# Add a sidebar with tabs
+st.sidebar.title("⚾ Baseball Lineup Manager")
 
-# Create tabs for different sections
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "Team Roster", 
+# Define all tab names
+tabs = [
+    "Team Roster",
     "Game Schedule", 
     "Batting Order", 
     "Fielding Rotation", 
@@ -338,10 +344,19 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Fielding Fairness",
     "Game Summary",
     "Data Management"
-])
+]
+
+# Create radio buttons in the sidebar for navigation
+selected_tab = st.sidebar.radio("Navigation", tabs)
+
+# Update the session state to track the active tab
+st.session_state.active_tab = selected_tab
+
+# Main area title that shows the current tab
+st.title(f"⚾ {selected_tab}")
 
 # Tab 1: Team Roster
-with tab1:
+if selected_tab == "Team Roster":
     st.header("Team Roster Management")
     
     # Option to download a template
@@ -374,7 +389,7 @@ with tab1:
         st.dataframe(st.session_state.roster)
 
 # Tab 2: Game Schedule
-with tab2:
+elif selected_tab == "Game Schedule":
     st.header("Game Schedule")
     
     # Create or edit game schedule
@@ -421,7 +436,7 @@ with tab2:
             st.success("Schedule saved!")
 
 # Tab 3: Batting Order
-with tab3:
+elif selected_tab == "Batting Order":
     st.header("Batting Order Setup")
     
     if st.session_state.roster is None:
@@ -586,7 +601,7 @@ with tab3:
                 st.success("All batting orders are valid!")
 
 # Tab 4: Fielding Rotation
-with tab4:
+elif selected_tab == "Fielding Rotation":
     st.header("Fielding Rotation Setup")
     
     if st.session_state.roster is None:
@@ -754,7 +769,7 @@ with tab4:
         st.info("💡 To see position distribution and fairness across all games, visit the 'Fielding Fairness' tab.")
 
 # Tab 5: Batting Fairness Analysis
-with tab5:
+elif selected_tab == "Batting Fairness":
     st.header("Batting Fairness Analysis")
     
     if st.session_state.roster is None:
@@ -769,9 +784,43 @@ with tab5:
             st.subheader("Batting Position Distribution")
             st.write("Number of times each player bats in each position across all games:")
             st.dataframe(batting_fairness)
+            
+            # Add visualization of the batting fairness
+            st.subheader("Visualization")
+            
+            # Create bar chart for each player
+            st.write("Average batting position for each player:")
+            
+            # Calculate average position
+            avg_positions = pd.DataFrame({
+                'Player': batting_fairness.index,
+                'Avg Position': batting_fairness.multiply(batting_fairness.columns).sum(axis=1) / batting_fairness.sum(axis=1)
+            }).sort_values('Avg Position')
+            
+            # Display as a bar chart using Streamlit
+            st.bar_chart(avg_positions.set_index('Player'))
+            
+            # Add some explanations
+            st.markdown("""
+            ### Interpreting the Results
+            
+            The table above shows how many times each player has batted in each position across all games.
+            Ideally, you want this distribution to be relatively even so all players get experience
+            in different parts of the batting order.
+            
+            **Good batting order rotation practices:**
+            
+            - Players should experience both early and late positions in the order
+            - No player should be consistently placed in the last positions
+            - Consider skill levels but balance with fairness
+            - Rotate consistently throughout the season
+            
+            Use this analysis to identify players who might need more opportunities in different
+            batting positions in upcoming games.
+            """)
 
 # Tab 6: Fielding Fairness Analysis
-with tab6:
+elif selected_tab == "Fielding Fairness":
     st.header("Fielding Fairness Analysis")
     
     if st.session_state.roster is None:
@@ -791,8 +840,55 @@ with tab6:
                           "Infield %", "Outfield %", "Bench %"]
             st.dataframe(fielding_fairness[display_cols])
             
+            # Add visualization
+            st.subheader("Position Type Distribution")
+            
+            # Prepare data for the chart
+            chart_data = fielding_fairness[["Infield %", "Outfield %", "Bench %"]].copy()
+            
+            # Display as a bar chart
+            st.bar_chart(chart_data)
+            
+            # Add detailed analysis
+            st.subheader("Detailed Analysis")
+            
+            # Calculate statistics
+            avg_bench = fielding_fairness["Bench %"].mean().round(1)
+            max_bench = fielding_fairness["Bench %"].max().round(1)
+            min_bench = fielding_fairness["Bench %"].min().round(1)
+            bench_std = fielding_fairness["Bench %"].std().round(1)
+            
+            # Display the statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Avg Bench Time", f"{avg_bench}%")
+            with col2:
+                st.metric("Max Bench Time", f"{max_bench}%")
+            with col3:
+                st.metric("Min Bench Time", f"{min_bench}%")
+            
+            st.write(f"**Standard Deviation (Bench):** {bench_std}% - Lower values indicate more balanced bench time")
+            
+            # Add interpretation guidance
+            st.markdown("""
+            ### Interpreting the Results
+            
+            The fielding position distribution shows how much time each player spends in different parts
+            of the field across all games and innings.
+            
+            **What to look for:**
+            
+            - Bench time should be fairly distributed among all players
+            - Players should experience both infield and outfield positions when possible
+            - Consider player skills and preferences while maintaining fairness
+            - A lower standard deviation in bench time percentage indicates more balanced rotations
+            
+            Use this analysis to identify adjustments needed for upcoming games to balance playing time
+            and field experience.
+            """)
+
 # Tab 7: Game Summary
-with tab7:
+elif selected_tab == "Game Summary":
     st.header("Game Summary")
     
     if st.session_state.roster is None:
@@ -828,7 +924,7 @@ with tab7:
             st.subheader("Batting Order")
             batting_df = pd.DataFrame({
                 "Order": list(range(1, len(batting_order) + 1)),
-                "Player": [players.iloc[idx]["Player"] for idx in batting_order]
+                "Player": [players.iloc[idx]["Player"] for idx in batting_order if idx < len(players)]
             })
             st.table(batting_df)
             
@@ -905,8 +1001,9 @@ with tab7:
                     buffer.write("BATTING ORDER:\n")
                     buffer.write("-" * 20 + "\n")
                     for i, player_idx in enumerate(batting_order, 1):
-                        player = players.iloc[player_idx]
-                        buffer.write(f"{i}. {player['First Name']} {player['Last Name']} (#{player['Jersey Number']})\n")
+                        if player_idx < len(players):
+                            player = players.iloc[player_idx]
+                            buffer.write(f"{i}. {player['First Name']} {player['Last Name']} (#{player['Jersey Number']})\n")
                     buffer.write("\n")
                     
                     # Write fielding positions
@@ -951,7 +1048,7 @@ with tab7:
             st.warning(f"No batting order or fielding rotation data for Game {selected_game}")
 
 # Tab 8: Data Management
-with tab8:
+elif selected_tab == "Data Management":
     st.header("Data Management")
     st.write("Save your team data to continue working on it later or on another device.")
     
@@ -1108,3 +1205,22 @@ with tab8:
 # Footer
 st.markdown("---")
 st.markdown("Baseball Lineup Manager - Helping coaches create fair and balanced rotations")
+
+# Add a feedback/status section in the sidebar
+st.sidebar.markdown("---")
+with st.sidebar.expander("App Status"):
+    # Display status of loaded data
+    roster_status = "✅ Loaded" if st.session_state.roster is not None else "❌ Not loaded"
+    schedule_status = "✅ Loaded" if st.session_state.schedule is not None else "❌ Not loaded"
+    batting_status = "✅ Configured" if st.session_state.batting_orders else "❌ Not configured"
+    fielding_status = "✅ Configured" if st.session_state.fielding_rotations else "❌ Not configured"
+    
+    st.write(f"**Team Roster:** {roster_status}")
+    st.write(f"**Game Schedule:** {schedule_status}")
+    st.write(f"**Batting Orders:** {batting_status}")
+    st.write(f"**Fielding Rotations:** {fielding_status}")
+
+# Add app info in sidebar footer
+st.sidebar.markdown("---")
+st.sidebar.info("Baseball Lineup Manager v1.0")
+

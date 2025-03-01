@@ -16,6 +16,13 @@ Baseball Lineup Manager is a comprehensive Streamlit application designed to hel
 - 📝 Game Summary and Export
 - 💾 Data Import/Export Functionality
 
+## What's New
+
+- 🧭 **Sidebar Navigation**: Easy access to all features through a vertical sidebar
+- 📈 **Enhanced Visualizations**: Visual representation of batting and fielding fairness
+- 🔔 **Status Indicators**: At-a-glance view of what data is loaded
+- 📋 **Improved Validation**: Better error checking for positions and lineups
+
 ## Prerequisites
 
 - Python 3.8+
@@ -48,6 +55,10 @@ streamlit run lineup.py
 
 ## How to Use
 
+### Navigation
+- Use the sidebar on the left to navigate between different sections of the app
+- The "App Status" indicator in the sidebar shows what data is currently loaded
+
 ### Team Roster
 - Upload a CSV with player information
 - Download a template to help you create your roster
@@ -61,8 +72,17 @@ streamlit run lineup.py
 - Set fielding positions for each inning
 - Validate and analyze position fairness
 
+### Fairness Analysis
+- View visualizations of batting position distribution
+- Analyze fielding position fairness across all games
+- Identify players who need more variety in positions
+
+### Game Summary
+- View complete game plans
+- Export as PDF or text for game day use
+
 ### Data Management
-- Export your team data as a JSON file
+- Export your team data to continue working later
 - Import previously saved team data
 - Generate example data for testing
 
@@ -70,8 +90,11 @@ streamlit run lineup.py
 - Export your team data to continue working later
 - Share lineup configurations with other coaches
 
-## Contact
+## Tips for Coaches
+- Regularly check the fairness analysis to ensure all players get fair playing time
+- Use the PDF export feature to create game day guides for assistant coaches
+- Save your data after each major change to avoid losing your work
 
-Andrew Straus - arstraus@example.com
+## Contact
 
 Project Link: [https://github.com/arstraus/lineup](https://github.com/arstraus/lineup)
