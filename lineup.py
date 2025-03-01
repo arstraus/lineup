@@ -377,7 +377,10 @@ if selected_tab == "Team Roster":
             if valid:
                 st.session_state.roster = df
                 st.success("Roster uploaded successfully!")
-                st.dataframe(df)
+                # Display with row numbers starting from 1
+                display_df = df.copy()
+                display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
+                st.dataframe(display_df, use_container_width=True)
             else:
                 st.error(message)
         except Exception as e:
@@ -386,7 +389,72 @@ if selected_tab == "Team Roster":
     # Display current roster if it exists
     if st.session_state.roster is not None:
         st.subheader("Current Team Roster")
-        st.dataframe(st.session_state.roster)
+        # Add a row index column that starts at 1
+        display_df = st.session_state.roster.copy()
+        display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
+        # Display the dataframe with row numbers visible
+        st.dataframe(display_df, use_container_width=True)
+        
+        # Add roster statistics
+        st.subheader("Roster Statistics")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Players", len(st.session_state.roster))
+        
+        # Add roster management actions
+        st.subheader("Roster Management")
+        
+        # Option to add a player
+        with st.expander("Add New Player"):
+            with st.form("add_player_form"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    new_first_name = st.text_input("First Name")
+                with col2:
+                    new_last_name = st.text_input("Last Name")
+                with col3:
+                    new_jersey = st.number_input("Jersey Number", min_value=0, max_value=99)
+                
+                submit_button = st.form_submit_button("Add Player")
+                
+                if submit_button:
+                    # Check if all fields are filled
+                    if not new_first_name or not new_last_name:
+                        st.error("Please fill in all fields")
+                    else:
+                        # Check if jersey number already exists
+                        if new_jersey in st.session_state.roster["Jersey Number"].values:
+                            st.error(f"Jersey number {new_jersey} already exists")
+                        else:
+                            # Add new player to roster
+                            new_player = pd.DataFrame({
+                                "First Name": [new_first_name],
+                                "Last Name": [new_last_name],
+                                "Jersey Number": [new_jersey]
+                            })
+                            st.session_state.roster = pd.concat([st.session_state.roster, new_player], ignore_index=True)
+                            st.success(f"Added {new_first_name} {new_last_name} (#{new_jersey}) to roster")
+                            st.rerun()  # Refresh the page to show updated roster
+        
+        # Option to remove a player
+        with st.expander("Remove Player"):
+            # Create a list of players to select from
+            players = st.session_state.roster.copy()
+            players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
+            player_options = players["Player"].tolist()
+            
+            selected_player = st.selectbox("Select player to remove", player_options)
+            
+            if st.button("Remove Selected Player"):
+                # Find the index of the selected player
+                selected_idx = players[players["Player"] == selected_player].index[0]
+                
+                # Remove player from roster
+                st.session_state.roster = st.session_state.roster.drop(selected_idx).reset_index(drop=True)
+                
+                # Show success message
+                st.success(f"Removed {selected_player} from roster")
+                st.rerun()  # Refresh the page to show updated roster
 
 # Tab 2: Game Schedule
 elif selected_tab == "Game Schedule":
@@ -979,6 +1047,8 @@ elif selected_tab == "Game Summary":
                 summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
             
             # Display the comprehensive summary table
+            # Add index starting from 1 instead of 0
+            summary_df.index = range(1, len(summary_df) + 1)
             st.dataframe(summary_df, use_container_width=True)
             
             # Export options
