@@ -915,45 +915,71 @@ elif selected_tab == "Game Summary":
         if selected_game in st.session_state.batting_orders and selected_game in st.session_state.fielding_rotations:
             # Get roster, batting order, and fielding data
             players = st.session_state.roster.copy()
-            players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
-            
             batting_order = st.session_state.batting_orders[selected_game]
             fielding_data = st.session_state.fielding_rotations[selected_game]
             
-            # Display batting order
-            st.subheader("Batting Order")
-            batting_df = pd.DataFrame({
-                "Order": list(range(1, len(batting_order) + 1)),
-                "Player": [players.iloc[idx]["Player"] for idx in batting_order if idx < len(players)]
-            })
-            st.table(batting_df)
+            # Create a comprehensive game summary table
+            st.subheader("Game Plan")
             
-            # Display fielding positions for each inning
-            st.subheader("Fielding Positions by Inning")
+            # Initialize columns for the summary dataframe
+            columns = ["Batting Order", "Jersey #", "Player Name"]
+            for i in range(1, innings + 1):
+                columns.append(f"Inning {i}")
             
-            for inning in range(1, innings + 1):
-                inning_key = f"Inning {inning}"
+            # Create empty dataframe with the columns
+            summary_df = pd.DataFrame(columns=columns)
+            
+            # Fill in the data for each player in the batting order
+            for batting_pos, player_idx in enumerate(batting_order, 1):
+                if player_idx < len(players):
+                    player = players.iloc[player_idx]
+                    
+                    # Initialize row data with player info
+                    row_data = {
+                        "Batting Order": batting_pos,
+                        "Jersey #": player["Jersey Number"],
+                        "Player Name": f"{player['First Name']} {player['Last Name']}"
+                    }
+                    
+                    # Add fielding positions for each inning
+                    for inning in range(1, innings + 1):
+                        inning_key = f"Inning {inning}"
+                        if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
+                            row_data[f"Inning {inning}"] = fielding_data[inning_key][player_idx]
+                        else:
+                            row_data[f"Inning {inning}"] = "N/A"
+                    
+                    # Add this player's row to the dataframe
+                    summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
+            
+            # Add bench players (players not in batting order)
+            all_player_indices = set(range(len(players)))
+            batting_indices = set([idx for idx in batting_order if idx < len(players)])
+            bench_indices = all_player_indices - batting_indices
+            
+            for player_idx in bench_indices:
+                player = players.iloc[player_idx]
                 
-                if inning_key in fielding_data:
-                    st.write(f"**Inning {inning}**")
-                    
-                    # Create a dataframe for this inning's positions
-                    inning_positions = []
-                    for p_idx, position in enumerate(fielding_data[inning_key]):
-                        if p_idx < len(players):
-                            inning_positions.append({
-                                "Player": players.iloc[p_idx]["Player"],
-                                "Position": position
-                            })
-                    
-                    # Sort by position (with a specific order)
-                    position_order = {pos: i for i, pos in enumerate(POSITIONS)}
-                    inning_df = pd.DataFrame(inning_positions)
-                    inning_df["Position Order"] = inning_df["Position"].map(position_order)
-                    inning_df = inning_df.sort_values("Position Order")
-                    
-                    # Display positions (excluding "Position Order" column)
-                    st.table(inning_df[["Position", "Player"]])
+                # Initialize row data with player info
+                row_data = {
+                    "Batting Order": "Bench",
+                    "Jersey #": player["Jersey Number"],
+                    "Player Name": f"{player['First Name']} {player['Last Name']}"
+                }
+                
+                # Add fielding positions for each inning
+                for inning in range(1, innings + 1):
+                    inning_key = f"Inning {inning}"
+                    if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
+                        row_data[f"Inning {inning}"] = fielding_data[inning_key][player_idx]
+                    else:
+                        row_data[f"Inning {inning}"] = "N/A"
+                
+                # Add this player's row to the dataframe
+                summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
+            
+            # Display the comprehensive summary table
+            st.dataframe(summary_df, use_container_width=True)
             
             # Export options
             st.subheader("Export Game Plan")
@@ -964,19 +990,107 @@ elif selected_tab == "Game Summary":
                 # Generate and allow download of PDF
                 if st.button("Generate PDF Game Plan"):
                     try:
-                        # Generate PDF
-                        pdf_buffer = generate_game_plan_pdf(
-                            selected_game, 
-                            game_info, 
-                            batting_order, 
-                            fielding_data, 
-                            players
-                        )
+                        # Create a buffer for the PDF
+                        from reportlab.lib.pagesizes import letter, landscape
+                        from reportlab.lib import colors
+                        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                        from reportlab.lib.units import inch
+                        
+                        buffer = io.BytesIO()
+                        
+                        # Create the PDF document (use landscape for wide tables)
+                        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), 
+                                               leftMargin=0.5*inch, rightMargin=0.5*inch,
+                                               topMargin=0.5*inch, bottomMargin=0.5*inch)
+                        elements = []
+                        
+                        # Get styles
+                        styles = getSampleStyleSheet()
+                        title_style = styles['Heading1']
+                        section_style = styles['Heading2']
+                        normal_style = styles['Normal']
+                        
+                        # Add game header
+                        elements.append(Paragraph(f"Game {selected_game} Plan", title_style))
+                        elements.append(Paragraph(f"Opponent: {game_info['Opponent']}", normal_style))
+                        elements.append(Paragraph(f"Date: {game_info['Date']}", normal_style))
+                        elements.append(Paragraph(f"Innings: {innings}", normal_style))
+                        elements.append(Spacer(1, 0.25*inch))
+                        
+                        # Convert dataframe to a list of lists for the table
+                        table_data = [summary_df.columns.tolist()]  # Header row
+                        for _, row in summary_df.iterrows():
+                            table_data.append(row.tolist())
+                        
+                        # Calculate total available width (landscape letter minus margins)
+                        available_width = 11*inch - 1*inch  # 11 inches is landscape letter width, minus margins
+                        
+                        # Distribute column widths more effectively
+                        # Batting Order: smaller, Jersey #: smaller, Player Name: larger, Innings: equal remaining space
+                        order_width = 0.7*inch  # Batting order column 
+                        jersey_width = 0.7*inch  # Jersey number column
+                        name_width = 2.0*inch    # Player name column
+                        
+                        # Calculate remaining width for inning columns
+                        remaining_width = available_width - (order_width + jersey_width + name_width)
+                        inning_width = remaining_width / innings if innings > 0 else 1*inch
+                        
+                        # Set column widths
+                        col_widths = [order_width, jersey_width, name_width] + [inning_width] * innings
+                        
+                        # Create the table
+                        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+                        
+                        # Add style to the table
+                        table.setStyle(TableStyle([
+                            # Header row styling
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            
+                            # Body styling
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                            ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Batting order centered
+                            ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Jersey number centered
+                            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                            
+                            # Inning columns centered
+                            *[('ALIGN', (3+i, 1), (3+i, -1), 'CENTER') for i in range(innings)],
+                            
+                            # Grid
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                            ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
+                            
+                            # Alternating row colors
+                            *[('BACKGROUND', (0, i), (-1, i), colors.lightgrey) for i in range(1, len(table_data)) if i % 2 == 0],
+                        ]))
+                        
+                        elements.append(table)
+                        
+                        # Add legend for positions
+                        elements.append(Spacer(1, 0.3*inch))
+                        legend_text = "Position Legend: P - Pitcher, C - Catcher, 1B - First Base, 2B - Second Base, 3B - Third Base, SS - Shortstop, LF - Left Field, RF - Right Field, LC - Left Center, RC - Right Center"
+                        elements.append(Paragraph(legend_text, normal_style))
+                        
+                        # Add footer
+                        elements.append(Spacer(1, 0.3*inch))
+                        elements.append(Paragraph("Baseball Lineup Manager - Game Plan", 
+                                                 ParagraphStyle('Footer', fontSize=8, textColor=colors.gray)))
+                        
+                        # Build the PDF
+                        doc.build(elements)
+                        
+                        # Get the PDF from the buffer
+                        buffer.seek(0)
                         
                         # Offer download button for the PDF
                         st.download_button(
                             label="Download PDF Game Plan",
-                            data=pdf_buffer,
+                            data=buffer,
                             file_name=f"game_{selected_game}_plan.pdf",
                             mime="application/pdf"
                         )
@@ -988,48 +1102,25 @@ elif selected_tab == "Game Summary":
                         st.info("Make sure you have the ReportLab library installed. Run: pip install reportlab")
             
             with export_col2:
-                # Text version option (as before)
+                # Text version option
                 if st.button("Generate Text Game Plan"):
                     # Create a string buffer
                     buffer = io.StringIO()
                     
                     # Write game info
                     buffer.write(f"GAME {selected_game} PLAN - {game_info['Opponent']} - {game_info['Date']}\n")
-                    buffer.write("=" * 50 + "\n\n")
+                    buffer.write("=" * 80 + "\n\n")
                     
-                    # Write batting order
-                    buffer.write("BATTING ORDER:\n")
+                    # Convert dataframe to text format
+                    text_table = summary_df.to_string(index=False)
+                    buffer.write(text_table)
+                    buffer.write("\n\n")
+                    
+                    # Add legend
+                    buffer.write("POSITION LEGEND:\n")
                     buffer.write("-" * 20 + "\n")
-                    for i, player_idx in enumerate(batting_order, 1):
-                        if player_idx < len(players):
-                            player = players.iloc[player_idx]
-                            buffer.write(f"{i}. {player['First Name']} {player['Last Name']} (#{player['Jersey Number']})\n")
-                    buffer.write("\n")
-                    
-                    # Write fielding positions
-                    buffer.write("FIELDING POSITIONS:\n")
-                    buffer.write("-" * 20 + "\n")
-                    
-                    for inning in range(1, innings + 1):
-                        inning_key = f"Inning {inning}"
-                        
-                        if inning_key in fielding_data:
-                            buffer.write(f"\nINNING {inning}:\n")
-                            
-                            # Sort positions in a sensible order
-                            position_assignments = []
-                            for p_idx, position in enumerate(fielding_data[inning_key]):
-                                if p_idx < len(players):
-                                    player = players.iloc[p_idx]
-                                    position_assignments.append({
-                                        "Player": f"{player['First Name']} {player['Last Name']} (#{player['Jersey Number']})",
-                                        "Position": position,
-                                        "Order": POSITIONS.index(position)
-                                    })
-                            
-                            # Sort and write positions
-                            for pos in sorted(position_assignments, key=lambda x: x["Order"]):
-                                buffer.write(f"{pos['Position']}: {pos['Player']}\n")
+                    buffer.write("P - Pitcher, C - Catcher, 1B - First Base, 2B - Second Base, 3B - Third Base\n")
+                    buffer.write("SS - Shortstop, LF - Left Field, RF - Right Field, LC - Left Center, RC - Right Center\n")
                     
                     # Get the text from the buffer
                     summary_text = buffer.getvalue()
