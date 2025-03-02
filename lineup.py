@@ -299,6 +299,7 @@ def save_app_data():
     
     # Create data dictionary with all session state
     data = {
+        "team_info": st.session_state.team_info if 'team_info' in st.session_state else {},
         "roster": st.session_state.roster.to_dict() if st.session_state.roster is not None else None,
         "schedule": st.session_state.schedule.to_dict() if st.session_state.schedule is not None else None,
         "batting_orders": st.session_state.batting_orders,
@@ -312,6 +313,19 @@ def save_app_data():
 def load_app_data(json_data):
     """Load application data from JSON"""
     data = json.loads(json_data)
+    
+    # Restore team info if it exists
+    if "team_info" in data:
+        st.session_state.team_info = data["team_info"]
+    else:
+        # Initialize with empty values if not in the data
+        st.session_state.team_info = {
+            "team_name": "",
+            "league": "",
+            "head_coach": "",
+            "assistant_coach1": "",
+            "assistant_coach2": ""
+        }
     
     # Restore roster
     if data["roster"] is not None:
@@ -345,7 +359,7 @@ st.sidebar.title("⚾ Baseball Lineup Manager")
 
 # Define all tab names
 tabs = [
-    "Team Roster",
+    "Team Setup",
     "Game Schedule", 
     "Player Setup",
     "Batting Order", 
@@ -365,36 +379,76 @@ st.session_state.active_tab = selected_tab
 # Main area title that shows the current tab
 st.title(f"⚾ {selected_tab}")
 
-# Tab 1: Team Roster
-if selected_tab == "Team Roster":
-    st.header("Team Roster Management")
+# Tab 1: Team Setup
+if selected_tab == "Team Setup":
+    st.header("Team Setup")
     
-    # Option to download a template
-    st.subheader("Download Roster Template")
-    num_players = st.number_input("Number of players", min_value=1, max_value=30, value=14)
-    template_df = create_empty_roster_template(num_players)
-    st.markdown(get_csv_download_link(template_df, "roster_template.csv", "Download Roster Template"), unsafe_allow_html=True)
+    # Create columns for team info and roster management
+    team_info_col, roster_col = st.columns([1, 2])
     
-    # Option to upload a roster
-    st.subheader("Upload Team Roster")
-    roster_file = st.file_uploader("Upload your team roster CSV file", type=["csv"])
-    
-    if roster_file is not None:
-        try:
-            df = pd.read_csv(roster_file)
-            valid, message = validate_roster(df)
+    with team_info_col:
+        st.subheader("Team Information")
+        
+        # Initialize team information in session state if it doesn't exist
+        if 'team_info' not in st.session_state:
+            st.session_state.team_info = {
+                "team_name": "",
+                "league": "",
+                "head_coach": "",
+                "assistant_coach1": "",
+                "assistant_coach2": ""
+            }
+        
+        # Team information form
+        with st.form("team_info_form"):
+            team_name = st.text_input("Team Name", value=st.session_state.team_info["team_name"])
+            league = st.text_input("League", value=st.session_state.team_info["league"])
+            head_coach = st.text_input("Head Coach", value=st.session_state.team_info["head_coach"])
+            assistant_coach1 = st.text_input("Assistant Coach 1", value=st.session_state.team_info["assistant_coach1"])
+            assistant_coach2 = st.text_input("Assistant Coach 2", value=st.session_state.team_info["assistant_coach2"])
             
-            if valid:
-                st.session_state.roster = df
-                st.success("Roster uploaded successfully!")
-                # Display with row numbers starting from 1
-                display_df = df.copy()
-                display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
-                st.dataframe(display_df, use_container_width=True)
-            else:
-                st.error(message)
-        except Exception as e:
-            st.error(f"Error uploading file: {str(e)}")
+            save_team_info = st.form_submit_button("Save Team Information")
+            
+            if save_team_info:
+                # Update session state with new values
+                st.session_state.team_info = {
+                    "team_name": team_name,
+                    "league": league,
+                    "head_coach": head_coach,
+                    "assistant_coach1": assistant_coach1,
+                    "assistant_coach2": assistant_coach2
+                }
+                st.success("Team information saved!")
+    
+    with roster_col:
+        st.subheader("Team Roster Management")
+        
+        # Option to download a template
+        st.markdown("##### Download Roster Template")
+        num_players = st.number_input("Number of players", min_value=1, max_value=30, value=14)
+        template_df = create_empty_roster_template(num_players)
+        st.markdown(get_csv_download_link(template_df, "roster_template.csv", "Download Roster Template"), unsafe_allow_html=True)
+        
+        # Option to upload a roster
+        st.markdown("##### Upload Team Roster")
+        roster_file = st.file_uploader("Upload your team roster CSV file", type=["csv"])
+        
+        if roster_file is not None:
+            try:
+                df = pd.read_csv(roster_file)
+                valid, message = validate_roster(df)
+                
+                if valid:
+                    st.session_state.roster = df
+                    st.success("Roster uploaded successfully!")
+                    # Display with row numbers starting from 1
+                    display_df = df.copy()
+                    display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
+                    st.dataframe(display_df, use_container_width=True)
+                else:
+                    st.error(message)
+            except Exception as e:
+                st.error(f"Error uploading file: {str(e)}")
     
     # Display current roster if it exists
     if st.session_state.roster is not None:
@@ -406,7 +460,6 @@ if selected_tab == "Team Roster":
         st.dataframe(display_df, use_container_width=True)
         
         # Add roster statistics
-        st.subheader("Roster Statistics")
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Players", len(st.session_state.roster))
@@ -1304,6 +1357,29 @@ elif selected_tab == "Game Summary":
         innings = game_info["Innings"]
         
         st.subheader(f"Game {selected_game} Summary")
+        
+        # Display team information if available
+        if 'team_info' in st.session_state and st.session_state.team_info["team_name"]:
+            team_col1, team_col2 = st.columns(2)
+            with team_col1:
+                st.write(f"**Team:** {st.session_state.team_info['team_name']}")
+                if st.session_state.team_info["league"]:
+                    st.write(f"**League:** {st.session_state.team_info['league']}")
+            
+            with team_col2:
+                if st.session_state.team_info["head_coach"]:
+                    coach_text = f"**Head Coach:** {st.session_state.team_info['head_coach']}"
+                    st.write(coach_text)
+                
+                asst_coaches = []
+                if st.session_state.team_info["assistant_coach1"]:
+                    asst_coaches.append(st.session_state.team_info["assistant_coach1"])
+                if st.session_state.team_info["assistant_coach2"]:
+                    asst_coaches.append(st.session_state.team_info["assistant_coach2"])
+                
+                if asst_coaches:
+                    st.write(f"**Assistant Coach(es):** {', '.join(asst_coaches)}")
+        
         st.write(f"**Opponent:** {game_info['Opponent']}")
         st.write(f"**Date:** {game_info['Date']}")
         st.write(f"**Innings:** {innings}")
@@ -1428,12 +1504,44 @@ elif selected_tab == "Game Summary":
                         
                         # Get styles
                         styles = getSampleStyleSheet()
-                        title_style = styles['Heading1']
+                        
+                        # Create a custom title style that's smaller
+                        custom_title_style = ParagraphStyle(
+                            'CustomTitle',
+                            parent=styles['Heading2'],  # Use Heading2 instead of Heading1 for smaller text
+                            fontSize=14,
+                            alignment=1  # Center alignment
+                        )
+                        
                         section_style = styles['Heading2']
                         normal_style = styles['Normal']
                         
-                        # Add game header
-                        elements.append(Paragraph(f"Game {selected_game} Plan", title_style))
+                        # Add game header with the updated title
+                        elements.append(Paragraph(f"Game {selected_game} Lineup", custom_title_style))
+                        
+                        # Add team information if available
+                        if 'team_info' in st.session_state and st.session_state.team_info["team_name"]:
+                            team_name = st.session_state.team_info["team_name"]
+                            league = st.session_state.team_info["league"]
+                            head_coach = st.session_state.team_info["head_coach"]
+                            
+                            elements.append(Paragraph(f"Team: {team_name}", normal_style))
+                            if league:
+                                elements.append(Paragraph(f"League: {league}", normal_style))
+                            if head_coach:
+                                coach_text = f"Coach: {head_coach}"
+                                asst1 = st.session_state.team_info["assistant_coach1"]
+                                asst2 = st.session_state.team_info["assistant_coach2"]
+                                if asst1 or asst2:
+                                    coach_text += " | Assistants: "
+                                    if asst1:
+                                        coach_text += asst1
+                                    if asst1 and asst2:
+                                        coach_text += ", " 
+                                    if asst2:
+                                        coach_text += asst2
+                                elements.append(Paragraph(coach_text, normal_style))
+                        
                         elements.append(Paragraph(f"Opponent: {game_info['Opponent']}", normal_style))
                         elements.append(Paragraph(f"Date: {game_info['Date']}", normal_style))
                         elements.append(Paragraph(f"Innings: {innings}", normal_style))
@@ -1441,6 +1549,18 @@ elif selected_tab == "Game Summary":
                         
                         # Convert dataframe to a list of lists for the table
                         table_data = [summary_df.columns.tolist()]  # Header row
+                        
+                        # Modify column headers for better wrapping
+                        modified_headers = table_data[0].copy()
+                        for i, header in enumerate(modified_headers):
+                            if header == "Batting Order":
+                                modified_headers[i] = "Batting\nOrder"
+                            elif header == "Jersey #":
+                                modified_headers[i] = "Jersey\n#"
+                            elif header == "Player Name":
+                                modified_headers[i] = "Player\nName"
+                        table_data[0] = modified_headers
+                        
                         for _, row in summary_df.iterrows():
                             table_data.append(row.tolist())
                         
@@ -1448,10 +1568,10 @@ elif selected_tab == "Game Summary":
                         available_width = 11*inch - 1*inch  # 11 inches is landscape letter width, minus margins
                         
                         # Distribute column widths more effectively
-                        # Batting Order: smaller, Jersey #: smaller, Player Name: larger, Available: small, Innings: equal remaining space
-                        order_width = 0.7*inch     # Batting order column 
+                        # Increased batting order column width
+                        order_width = 0.9*inch     # Batting order column (increased from 0.7)
                         jersey_width = 0.7*inch    # Jersey number column
-                        name_width = 2.0*inch      # Player name column
+                        name_width = 1.9*inch      # Player name column (decreased from 2.0)
                         avail_width = 0.7*inch     # Available column
                         
                         # Calculate remaining width for inning columns
@@ -1471,7 +1591,10 @@ elif selected_tab == "Game Summary":
                             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('WORDWRAP', (0, 0), (-1, 0), True),  # Enable word wrapping for header row
+                            ('LINESPACING', (0, 0), (-1, 0), 0.9),  # Reduce line spacing in header
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),  # Adjust bottom padding
+                            ('TOPPADDING', (0, 0), (-1, 0), 8),     # Adjust top padding
                             
                             # Body styling
                             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
@@ -1523,7 +1646,7 @@ elif selected_tab == "Game Summary":
                         st.download_button(
                             label="Download PDF Game Plan",
                             data=buffer,
-                            file_name=f"game_{selected_game}_plan.pdf",
+                            file_name=f"game_{selected_game}_lineup.pdf",  # Changed to "lineup" instead of "plan"
                             mime="application/pdf"
                         )
                         
@@ -1540,7 +1663,34 @@ elif selected_tab == "Game Summary":
                     buffer = io.StringIO()
                     
                     # Write game info
-                    buffer.write(f"GAME {selected_game} PLAN - {game_info['Opponent']} - {game_info['Date']}\n")
+                    team_header = ""
+                    if 'team_info' in st.session_state and st.session_state.team_info["team_name"]:
+                        team_name = st.session_state.team_info["team_name"]
+                        league = st.session_state.team_info["league"]
+                        head_coach = st.session_state.team_info["head_coach"]
+                        
+                        team_header = f"{team_name}"
+                        if league:
+                            team_header += f" ({league})"
+                        
+                        buffer.write(f"TEAM: {team_header}\n")
+                        
+                        coach_text = f"COACH: {head_coach}"
+                        asst1 = st.session_state.team_info["assistant_coach1"]
+                        asst2 = st.session_state.team_info["assistant_coach2"]
+                        if asst1 or asst2:
+                            coach_text += " | ASSISTANTS: "
+                            if asst1:
+                                coach_text += asst1
+                            if asst1 and asst2:
+                                coach_text += ", " 
+                            if asst2:
+                                coach_text += asst2
+                        
+                        if head_coach:
+                            buffer.write(f"{coach_text}\n")
+                    
+                    buffer.write(f"GAME {selected_game} LINEUP - {game_info['Opponent']} - {game_info['Date']}\n")
                     buffer.write("=" * 80 + "\n\n")
                     
                     # Convert dataframe to text format
@@ -1565,7 +1715,7 @@ elif selected_tab == "Game Summary":
                     st.download_button(
                         label="Download Text Game Plan",
                         data=summary_text,
-                        file_name=f"game_{selected_game}_plan.txt",
+                        file_name=f"game_{selected_game}_lineup.txt",  # Changed from "plan" to "lineup"
                         mime="text/plain"
                     )
         else:
