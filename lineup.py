@@ -381,7 +381,7 @@ st.title(f"⚾ {selected_tab}")
 
 # Tab 1: Team Setup
 if selected_tab == "Team Setup":
-    st.header("Team Setup")
+   ## st.header("Team Setup")
     
     # Create columns for team info and roster management
     team_info_col, roster_col = st.columns([1, 2])
@@ -521,7 +521,7 @@ if selected_tab == "Team Setup":
 
 # Tab 2: Game Schedule
 elif selected_tab == "Game Schedule":
-    st.header("Game Schedule")
+    ## st.header("Game Schedule")
     
     # Create or edit game schedule
     st.subheader("Create Game Schedule")
@@ -568,7 +568,7 @@ elif selected_tab == "Game Schedule":
 
 # Tab 3: Player Setup
 elif selected_tab == "Player Setup":
-    st.header("Player Setup")
+    ## st.header("Player Setup")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -689,7 +689,7 @@ elif selected_tab == "Player Setup":
 
 # Tab 4: Batting Order
 elif selected_tab == "Batting Order":
-    st.header("Batting Order Setup")
+    ## st.header("Batting Order Setup")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -950,7 +950,7 @@ elif selected_tab == "Batting Order":
 
 # Tab 5: Fielding Rotation
 elif selected_tab == "Fielding Rotation":
-    st.header("Fielding Rotation Setup")
+    ## st.header("Fielding Rotation Setup")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -1220,7 +1220,7 @@ elif selected_tab == "Fielding Rotation":
         
 # Tab 6: Batting Fairness Analysis
 elif selected_tab == "Batting Fairness":
-    st.header("Batting Fairness Analysis")
+    ## st.header("Batting Fairness Analysis")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -1271,7 +1271,7 @@ elif selected_tab == "Batting Fairness":
 
 # Tab 7: Fielding Fairness Analysis
 elif selected_tab == "Fielding Fairness":
-    st.header("Fielding Fairness Analysis")
+    ## st.header("Fielding Fairness Analysis")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -1339,7 +1339,7 @@ elif selected_tab == "Fielding Fairness":
 
 # Tab 8: Game Summary
 elif selected_tab == "Game Summary":
-    st.header("Game Summary")
+    ## st.header("Game Summary")
     
     if st.session_state.roster is None:
         st.warning("Please upload a team roster first")
@@ -1723,7 +1723,7 @@ elif selected_tab == "Game Summary":
 
 # Tab 9: Data Management
 elif selected_tab == "Data Management":
-    st.header("Data Management")
+    ## st.header("Data Management")
     st.write("Save your team data to continue working on it later or on another device.")
     
     # Create two columns for export and import
