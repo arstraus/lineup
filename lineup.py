@@ -302,7 +302,8 @@ def save_app_data():
         "roster": st.session_state.roster.to_dict() if st.session_state.roster is not None else None,
         "schedule": st.session_state.schedule.to_dict() if st.session_state.schedule is not None else None,
         "batting_orders": st.session_state.batting_orders,
-        "fielding_rotations": st.session_state.fielding_rotations
+        "fielding_rotations": st.session_state.fielding_rotations,
+        "player_availability": st.session_state.player_availability
     }
     
     # Use the custom encoder to handle special data types
@@ -328,9 +329,15 @@ def load_app_data(json_data):
     st.session_state.batting_orders = data["batting_orders"]
     st.session_state.fielding_rotations = data["fielding_rotations"]
     
+    # Restore player availability if it exists in the data
+    if "player_availability" in data:
+        st.session_state.player_availability = data["player_availability"]
+    
     # Convert dictionary string keys back to integers for game IDs
     st.session_state.batting_orders = {int(k) if k.isdigit() else k: v for k, v in st.session_state.batting_orders.items()}
     st.session_state.fielding_rotations = {int(k) if k.isdigit() else k: v for k, v in st.session_state.fielding_rotations.items()}
+    if "player_availability" in data:
+        st.session_state.player_availability = {int(k) if k.isdigit() else k: v for k, v in st.session_state.player_availability.items()}
 
 # Main app layout
 # Add a sidebar with tabs
@@ -670,11 +677,10 @@ elif selected_tab == "Batting Order":
         num_players = len(players)
         batting_grid = pd.DataFrame(index=range(num_players), columns=col_headers)
         
-        # Fill in player names with availability information
-        updated_player_names = players["Player"].copy().tolist()
-        batting_grid["Player"] = updated_player_names
+        # Fill in player names
+        batting_grid["Player"] = players["Player"].tolist()
         
-        # Fill in the current batting positions and update player names with availability
+        # Fill in the current batting positions with OUT for unavailable players
         for _, game in games.iterrows():
             game_id = game["Game #"]
             game_col = f"Game {game_id} vs {game['Opponent']}"
@@ -685,12 +691,13 @@ elif selected_tab == "Batting Order":
                 except:
                     pass
             
-            # Update player names with availability information
+            # Get availability information
+            availability = [True] * num_players  # Default all players as available
             if game_id in st.session_state.player_availability:
-                availability = st.session_state.player_availability[game_id]["Available"]
-                for idx, avail in enumerate(availability):
-                    if idx < len(batting_grid) and not avail:
-                        batting_grid.loc[idx, "Player"] = f"{players.iloc[idx]['Player']} (OUT)"
+                availability_data = st.session_state.player_availability[game_id]["Available"]
+                for idx, avail in enumerate(availability_data):
+                    if idx < num_players:
+                        availability[idx] = avail
             
             # Get batting order for this game
             if game_id in st.session_state.batting_orders:
@@ -699,12 +706,23 @@ elif selected_tab == "Batting Order":
                 # Create a mapping of player index to batting position
                 order_map = {idx: pos+1 for pos, idx in enumerate(batting_order)}
                 
-                # Fill in the batting positions
+                # Fill in the batting positions or OUT for unavailable players
                 for p_idx in range(num_players):
-                    batting_grid.loc[p_idx, game_col] = order_map.get(p_idx, "")
+                    if not availability[p_idx]:
+                        # Player is unavailable - display OUT
+                        batting_grid.loc[p_idx, game_col] = "OUT"
+                    else:
+                        # Player is available - display batting position
+                        batting_grid.loc[p_idx, game_col] = order_map.get(p_idx, "")
         
         # Set index to start at 1
         batting_grid.index = range(1, len(batting_grid) + 1)
+        
+        # Convert all columns (except Player) to string type to allow mixed content (numbers and "OUT")
+        for col in batting_grid.columns:
+            if col != "Player":
+                batting_grid[col] = batting_grid[col].astype(str)
+                batting_grid[col] = batting_grid[col].replace("nan", "")  # Replace NaN values with empty strings
         
         # Display the editable grid
         edited_grid = st.data_editor(
@@ -712,13 +730,10 @@ elif selected_tab == "Batting Order":
             use_container_width=True,
             column_config={
                 "Player": st.column_config.TextColumn("Player", disabled=True),
-                **{col: st.column_config.NumberColumn(
+                **{col: st.column_config.TextColumn(
                     col, 
-                    min_value=1, 
-                    max_value=num_players,
-                    step=1,
-                    format="%d",
                     width="medium",
+                    help=f"Batting position for {col}"
                 ) for col in batting_grid.columns if col != "Player"}
             },
             hide_index=False,
@@ -730,7 +745,7 @@ elif selected_tab == "Batting Order":
             if game_id in st.session_state.player_availability:
                 unavailable_count = len(players) - sum(st.session_state.player_availability[game_id]["Available"])
                 if unavailable_count > 0:
-                    st.warning(f"Game {game_id}: {unavailable_count} player(s) marked as unavailable in Player Setup. They should be placed at the end of the batting order or excluded.")
+                    st.warning(f"Game {game_id}: {unavailable_count} player(s) marked as unavailable in Player Setup.")
         
         # Save button for all games
         if st.button("Save All Batting Orders", key="save_all_batting"):
@@ -753,27 +768,44 @@ elif selected_tab == "Batting Order":
                     # This handles the case where multiple players have the same position or some positions are missing
                     position_map = {}
                     for idx, pos in enumerate(positions):
-                        if pd.notna(pos) and pos != "":
-                            position = int(pos)
-                            if position not in position_map:
-                                position_map[position] = idx
+                        if pd.notna(pos) and pos != "" and pos != "OUT":
+                            # Try to convert to integer for position
+                            try:
+                                position = int(pos)
+                                if position not in position_map:
+                                    position_map[position] = idx
+                            except ValueError:
+                                # Not a number, could be "OUT" or something else, skip
+                                pass
                     
                     # Create the batting order list (sorted by position)
                     batting_order = []
                     for pos in range(1, num_players + 1):
                         if pos in position_map:
                             batting_order.append(position_map[pos])
-                        
-                    # Fill in any missing positions with players not yet in the order
-                    remaining_players = [i for i in range(num_players) if i not in batting_order]
                     
-                    # Sort remaining players - put unavailable players at the end
+                    # Determine available and unavailable players
+                    available = []
+                    unavailable = []
+                    
                     if game_id in st.session_state.player_availability:
                         availability = st.session_state.player_availability[game_id]["Available"]
-                        # Sort remaining players by availability (available first)
-                        remaining_players.sort(key=lambda idx: 0 if (idx < len(availability) and availability[idx]) else 1)
+                        for idx in range(num_players):
+                            if idx < len(availability):
+                                if availability[idx]:
+                                    if idx not in batting_order:
+                                        available.append(idx)
+                                else:
+                                    unavailable.append(idx)
+                    else:
+                        # If no availability info, treat all missing players as available
+                        available = [i for i in range(num_players) if i not in batting_order]
                     
-                    batting_order.extend(remaining_players)
+                    # Add any available players not yet in order
+                    batting_order.extend(available)
+                    
+                    # Add unavailable players at the end
+                    batting_order.extend(unavailable)
                     
                     # Update the session state
                     st.session_state.batting_orders[game_id] = batting_order
@@ -781,7 +813,7 @@ elif selected_tab == "Batting Order":
             st.success("All batting orders saved!")
             
         # Add warnings about duplicate or missing positions
-        st.info("Enter the batting order position (1-9+) for each player in each game. Leave blank for players not in the lineup.")
+        st.info("Enter the batting order position (1-9+) for each player in each game. Leave blank for players not in the lineup. Unavailable players will show 'OUT'.")
         
         # Validation button
         if st.button("Validate Batting Orders"):
@@ -797,8 +829,15 @@ elif selected_tab == "Batting Order":
                         pass
                 
                 if game_col in edited_grid.columns:
-                    # Get the batting positions from the grid
-                    positions = [p for p in edited_grid[game_col].tolist() if pd.notna(p) and p != ""]
+                    # Get the batting positions from the grid (exclude OUT values)
+                    positions = []
+                    for p in edited_grid[game_col].tolist():
+                        if pd.notna(p) and p != "" and p != "OUT":
+                            try:
+                                positions.append(int(p))
+                            except ValueError:
+                                # Skip non-numeric values
+                                pass
                     
                     # Check for duplicates
                     if len(positions) != len(set(positions)):
@@ -813,21 +852,6 @@ elif selected_tab == "Batting Order":
                         missing = [p for p in expected_positions if p not in positions]
                         if missing:
                             st.warning(f"Game {game_id}: Gaps in batting order - missing positions {missing}")
-                            all_valid = False
-                
-                    # Check if unavailable players are in batting order
-                    if game_id in st.session_state.player_availability:
-                        availability = st.session_state.player_availability[game_id]["Available"]
-                        unavailable_in_lineup = []
-                        
-                        for idx, pos in enumerate(edited_grid[game_col]):
-                            if pd.notna(pos) and pos != "" and idx < len(availability) and not availability[idx]:
-                                # Convert from 1-based to 0-based index
-                                player_name = players.iloc[idx]["Player"]
-                                unavailable_in_lineup.append(f"{player_name} at position {pos}")
-                        
-                        if unavailable_in_lineup:
-                            st.warning(f"Game {game_id}: Unavailable players in batting lineup: {', '.join(unavailable_in_lineup)}")
                             all_valid = False
             
             if all_valid:
@@ -911,33 +935,34 @@ elif selected_tab == "Fielding Rotation":
         players = st.session_state.roster.copy()
         players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
         
-        # Add availability and catcher capability information
+        # Get availability information
+        availability = [True] * len(players)  # Default all players as available
+        can_play_catcher = [False] * len(players)  # Default no players can play catcher
+        
         if selected_game in st.session_state.player_availability:
-            availability = st.session_state.player_availability[selected_game]
+            avail_data = st.session_state.player_availability[selected_game]["Available"]
+            for idx, avail in enumerate(avail_data):
+                if idx < len(availability):
+                    availability[idx] = avail
             
-            # Update the displayed player names with availability status
-            updated_players = []
-            for idx, player in enumerate(players["Player"]):
-                if idx < len(availability["Available"]) and not availability["Available"][idx]:
-                    updated_players.append(f"{player} (OUT)")
-                else:
-                    updated_players.append(player)
-            
-            players["Player"] = updated_players
+            catcher_data = st.session_state.player_availability[selected_game]["Can Play Catcher"]
+            for idx, can_catch in enumerate(catcher_data):
+                if idx < len(can_play_catcher):
+                    can_play_catcher[idx] = can_catch
             
             # Add availability warning
-            unavailable_count = len(players) - sum(availability["Available"])
+            unavailable_count = len(players) - sum(availability)
             if unavailable_count > 0:
-                st.warning(f"{unavailable_count} player(s) marked as unavailable. They should be assigned to bench positions.")
+                st.warning(f"{unavailable_count} player(s) marked as unavailable. They will show 'OUT' in all innings.")
             
             # Add catcher information
-            catcher_count = sum(availability["Can Play Catcher"])
+            catcher_count = sum(can_play_catcher)
             if catcher_count == 0:
                 st.error("No players marked as capable of playing catcher. Please update player setup.")
             else:
                 # Get the names of available catchers
                 catcher_names = [players.iloc[i]["Player"] for i in range(len(players)) 
-                                if i < len(availability["Can Play Catcher"]) and availability["Can Play Catcher"][i]]
+                                if i < len(can_play_catcher) and can_play_catcher[i]]
                 st.info(f"Players who can play catcher: {', '.join(catcher_names)}")
         
         # Create a table for all innings at once
@@ -953,19 +978,29 @@ elif selected_tab == "Fielding Rotation":
         fielding_grid = pd.DataFrame(index=range(len(players)), columns=col_headers)
         fielding_grid["Player"] = players["Player"].tolist()
         
-        # Fill in the positions
+        # Fill in the positions or OUT for unavailable players
         for inning in range(1, innings + 1):
             inning_key = f"Inning {inning}"
             inning_col = f"Inning {inning}"
             positions = st.session_state.fielding_rotations[selected_game][inning_key]
+            
             for p_idx in range(len(players)):
-                if p_idx < len(positions):
+                if not availability[p_idx]:
+                    # Player is unavailable - display OUT
+                    fielding_grid.loc[p_idx, inning_col] = "OUT"
+                elif p_idx < len(positions):
+                    # Player is available - display position
                     fielding_grid.loc[p_idx, inning_col] = positions[p_idx]
                 else:
+                    # Default to bench for any missing positions
                     fielding_grid.loc[p_idx, inning_col] = "Bench"
         
         # Set index to start at 1
         fielding_grid.index = range(1, len(fielding_grid) + 1)
+        
+        # Create a list of options for the selectbox - regular positions plus OUT
+        position_options = POSITIONS.copy()
+        position_options.append("OUT")
         
         # Display the editable grid
         edited_grid = st.data_editor(
@@ -975,7 +1010,7 @@ elif selected_tab == "Fielding Rotation":
                 "Player": st.column_config.TextColumn("Player", disabled=True),
                 **{f"Inning {i}": st.column_config.SelectboxColumn(
                     f"Inning {i}", 
-                    options=POSITIONS,
+                    options=position_options,
                     width="medium",
                     help=f"Position for inning {i}"
                 ) for i in range(1, innings + 1)}
@@ -989,8 +1024,10 @@ elif selected_tab == "Fielding Rotation":
             for inning in range(1, innings + 1):
                 inning_key = f"Inning {inning}"
                 inning_col = f"Inning {inning}"
-                positions = edited_grid[inning_col].tolist()
-                st.session_state.fielding_rotations[selected_game][inning_key] = positions
+                updated_positions = edited_grid[inning_col].tolist()
+                
+                # Save positions to session state (keep OUT for unavailable players)
+                st.session_state.fielding_rotations[selected_game][inning_key] = updated_positions
             
             st.success("Fielding positions saved for all innings!")
             
@@ -1002,10 +1039,11 @@ elif selected_tab == "Fielding Rotation":
             
             for inning in range(1, innings + 1):
                 inning_key = f"Inning {inning}"
-                positions = st.session_state.fielding_rotations[selected_game][inning_key]
+                inning_col = f"Inning {inning}"
+                positions = edited_grid[inning_col].tolist()
                 
-                # Check for duplicate positions (except bench)
-                non_bench_positions = [p for p in positions if p != "Bench"]
+                # Check for duplicate positions (except bench and OUT)
+                non_bench_positions = [p for p in positions if p != "Bench" and p != "OUT"]
                 if len(non_bench_positions) != len(set(non_bench_positions)):
                     duplicates = [p for p in non_bench_positions if non_bench_positions.count(p) > 1]
                     errors.append(f"Inning {inning}: Duplicate position(s): {', '.join(set(duplicates))}")
@@ -1017,20 +1055,16 @@ elif selected_tab == "Fielding Rotation":
                     errors.append(f"Inning {inning}: Missing position(s): {', '.join(missing_positions)}")
                 
                 # Check if unavailable players are assigned field positions
-                if selected_game in st.session_state.player_availability:
-                    availability = st.session_state.player_availability[selected_game]["Available"]
-                    for idx, position in enumerate(positions):
-                        if idx < len(availability) and not availability[idx] and position != "Bench":
-                            player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
-                            warnings.append(f"Inning {inning}: Unavailable player {player_name} assigned to {position}")
+                for idx, position in enumerate(positions):
+                    if idx < len(availability) and not availability[idx] and position != "OUT":
+                        player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
+                        warnings.append(f"Inning {inning}: Unavailable player {player_name} should be marked as OUT, not {position}")
                 
                 # Check if catcher position is assigned to a capable player
-                if selected_game in st.session_state.player_availability:
-                    can_catch = st.session_state.player_availability[selected_game]["Can Play Catcher"]
-                    for idx, position in enumerate(positions):
-                        if position == "Catcher" and idx < len(can_catch) and not can_catch[idx]:
-                            player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
-                            warnings.append(f"Inning {inning}: Player {player_name} assigned to Catcher but not marked as capable")
+                for idx, position in enumerate(positions):
+                    if position == "Catcher" and idx < len(can_play_catcher) and not can_play_catcher[idx]:
+                        player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
+                        warnings.append(f"Inning {inning}: Player {player_name} assigned to Catcher but not marked as capable")
             
             # Display errors and warnings
             if errors:
@@ -1044,6 +1078,25 @@ elif selected_tab == "Fielding Rotation":
                 st.success("All positions are properly assigned for each inning!")
                 st.info("Note: It's normal to have multiple players on the bench.")
         
+        # Add auto-assign feature for unavailable players
+        if st.button("Auto-assign Unavailable Players", key="auto_assign_out"):
+            updated = False
+            for inning in range(1, innings + 1):
+                inning_key = f"Inning {inning}"
+                positions = st.session_state.fielding_rotations[selected_game][inning_key]
+                
+                # Set unavailable players to OUT
+                for idx in range(len(positions)):
+                    if idx < len(availability) and not availability[idx] and positions[idx] != "OUT":
+                        positions[idx] = "OUT"
+                        updated = True
+            
+            if updated:
+                st.success("Updated all unavailable players to OUT")
+                st.rerun()
+            else:
+                st.info("All unavailable players are already marked as OUT")
+        
         # Add individual game fairness analysis
         st.subheader("Game Fielding Fairness")
         
@@ -1053,7 +1106,7 @@ elif selected_tab == "Fielding Rotation":
             game_fairness = pd.DataFrame(
                 0, 
                 index=players["Player"], 
-                columns=["Infield", "Outfield", "Bench", "Total Innings"]
+                columns=["Infield", "Outfield", "Bench", "OUT", "Total Innings"]
             )
             
             # Get game details
@@ -1075,7 +1128,9 @@ elif selected_tab == "Fielding Rotation":
                             game_fairness.loc[player, "Total Innings"] += 1
                             
                             # Update position counts
-                            if position in INFIELD:
+                            if position == "OUT":
+                                game_fairness.loc[player, "OUT"] += 1
+                            elif position in INFIELD:
                                 game_fairness.loc[player, "Infield"] += 1
                             elif position in OUTFIELD:
                                 game_fairness.loc[player, "Outfield"] += 1
@@ -1083,14 +1138,15 @@ elif selected_tab == "Fielding Rotation":
                                 game_fairness.loc[player, "Bench"] += 1
             
             # Calculate percentages
-            for col in ["Infield", "Outfield", "Bench"]:
+            for col in ["Infield", "Outfield", "Bench", "OUT"]:
                 game_fairness[f"{col} %"] = (game_fairness[col] / game_fairness["Total Innings"] * 100).round(1)
             
             # Filter out players with no innings
             game_fairness = game_fairness[game_fairness["Total Innings"] > 0]
             
             # Display the table
-            st.dataframe(game_fairness[["Infield", "Outfield", "Bench", "Total Innings", "Infield %", "Outfield %", "Bench %"]])
+            st.dataframe(game_fairness[["Infield", "Outfield", "Bench", "OUT", "Total Innings", 
+                                       "Infield %", "Outfield %", "Bench %", "OUT %"]])
         
         st.info("💡 To see position distribution and fairness across all games, visit the 'Fielding Fairness' tab.")
     
@@ -1103,7 +1159,7 @@ elif selected_tab == "Fielding Rotation":
         1. **Track playing time**: Ensure all players get similar field time over the season
         2. **Rotate positions**: Give players experience in different positions
         3. **Consider player skills**: Balance development with team success
-        4. **Check player availability**: Ensure unavailable players are on the bench
+        4. **Check player availability**: Unavailable players are shown as OUT
         5. **Validate positions**: Use the validation button to check for errors
         
         Create rotations by assigning positions to each player for each inning.
@@ -1259,11 +1315,19 @@ elif selected_tab == "Game Summary":
             batting_order = st.session_state.batting_orders[selected_game]
             fielding_data = st.session_state.fielding_rotations[selected_game]
             
+            # Get player availability
+            availability = [True] * len(players)  # Default all players as available
+            if selected_game in st.session_state.player_availability:
+                avail_data = st.session_state.player_availability[selected_game]["Available"]
+                for idx, avail in enumerate(avail_data):
+                    if idx < len(availability):
+                        availability[idx] = avail
+            
             # Create a comprehensive game summary table
             st.subheader("Game Plan")
             
             # Initialize columns for the summary dataframe
-            columns = ["Batting Order", "Jersey #", "Player Name"]
+            columns = ["Batting Order", "Jersey #", "Player Name", "Available"]
             for i in range(1, innings + 1):
                 columns.append(f"Inning {i}")
             
@@ -1274,19 +1338,26 @@ elif selected_tab == "Game Summary":
             for batting_pos, player_idx in enumerate(batting_order, 1):
                 if player_idx < len(players):
                     player = players.iloc[player_idx]
+                    is_available = availability[player_idx] if player_idx < len(availability) else True
                     
                     # Initialize row data with player info
                     row_data = {
-                        "Batting Order": batting_pos,
+                        "Batting Order": "OUT" if not is_available else batting_pos,
                         "Jersey #": player["Jersey Number"],
-                        "Player Name": f"{player['First Name']} {player['Last Name']}"
+                        "Player Name": f"{player['First Name']} {player['Last Name']}",
+                        "Available": "Yes" if is_available else "No"
                     }
                     
                     # Add fielding positions for each inning
                     for inning in range(1, innings + 1):
                         inning_key = f"Inning {inning}"
                         if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
-                            row_data[f"Inning {inning}"] = fielding_data[inning_key][player_idx]
+                            position = fielding_data[inning_key][player_idx]
+                            # If position isn't already OUT but player is unavailable, show OUT
+                            if not is_available and position != "OUT":
+                                row_data[f"Inning {inning}"] = "OUT"
+                            else:
+                                row_data[f"Inning {inning}"] = position
                         else:
                             row_data[f"Inning {inning}"] = "N/A"
                     
@@ -1300,19 +1371,26 @@ elif selected_tab == "Game Summary":
             
             for player_idx in bench_indices:
                 player = players.iloc[player_idx]
+                is_available = availability[player_idx] if player_idx < len(availability) else True
                 
                 # Initialize row data with player info
                 row_data = {
-                    "Batting Order": "Bench",
+                    "Batting Order": "OUT" if not is_available else "Bench",
                     "Jersey #": player["Jersey Number"],
-                    "Player Name": f"{player['First Name']} {player['Last Name']}"
+                    "Player Name": f"{player['First Name']} {player['Last Name']}",
+                    "Available": "Yes" if is_available else "No"
                 }
                 
                 # Add fielding positions for each inning
                 for inning in range(1, innings + 1):
                     inning_key = f"Inning {inning}"
                     if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
-                        row_data[f"Inning {inning}"] = fielding_data[inning_key][player_idx]
+                        position = fielding_data[inning_key][player_idx]
+                        # If position isn't already OUT but player is unavailable, show OUT
+                        if not is_available and position != "OUT":
+                            row_data[f"Inning {inning}"] = "OUT"
+                        else:
+                            row_data[f"Inning {inning}"] = position
                     else:
                         row_data[f"Inning {inning}"] = "N/A"
                 
@@ -1370,17 +1448,18 @@ elif selected_tab == "Game Summary":
                         available_width = 11*inch - 1*inch  # 11 inches is landscape letter width, minus margins
                         
                         # Distribute column widths more effectively
-                        # Batting Order: smaller, Jersey #: smaller, Player Name: larger, Innings: equal remaining space
-                        order_width = 0.7*inch  # Batting order column 
-                        jersey_width = 0.7*inch  # Jersey number column
-                        name_width = 2.0*inch    # Player name column
+                        # Batting Order: smaller, Jersey #: smaller, Player Name: larger, Available: small, Innings: equal remaining space
+                        order_width = 0.7*inch     # Batting order column 
+                        jersey_width = 0.7*inch    # Jersey number column
+                        name_width = 2.0*inch      # Player name column
+                        avail_width = 0.7*inch     # Available column
                         
                         # Calculate remaining width for inning columns
-                        remaining_width = available_width - (order_width + jersey_width + name_width)
+                        remaining_width = available_width - (order_width + jersey_width + name_width + avail_width)
                         inning_width = remaining_width / innings if innings > 0 else 1*inch
                         
                         # Set column widths
-                        col_widths = [order_width, jersey_width, name_width] + [inning_width] * innings
+                        col_widths = [order_width, jersey_width, name_width, avail_width] + [inning_width] * innings
                         
                         # Create the table
                         table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -1399,24 +1478,34 @@ elif selected_tab == "Game Summary":
                             ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
                             ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Batting order centered
                             ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Jersey number centered
+                            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Available column centered
                             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                             
                             # Inning columns centered
-                            *[('ALIGN', (3+i, 1), (3+i, -1), 'CENTER') for i in range(innings)],
+                            *[('ALIGN', (4+i, 1), (4+i, -1), 'CENTER') for i in range(innings)],
                             
                             # Grid
                             ('GRID', (0, 0), (-1, -1), 1, colors.black),
                             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
                             
-                            # Alternating row colors
-                            *[('BACKGROUND', (0, i), (-1, i), colors.lightgrey) for i in range(1, len(table_data)) if i % 2 == 0],
+                            # Highlight unavailable players with subtle background
+                            *[('BACKGROUND', (0, i), (-1, i), colors.lightpink) 
+                              for i in range(1, len(table_data)) 
+                              if table_data[i][3] == "No"],  # Check Available column
+                            
+                            # Alternating row colors for available players
+                            *[('BACKGROUND', (0, i), (-1, i), colors.lightgrey) 
+                              for i in range(1, len(table_data)) 
+                              if i % 2 == 0 and table_data[i][3] == "Yes"],
                         ]))
                         
                         elements.append(table)
                         
                         # Add legend for positions
                         elements.append(Spacer(1, 0.3*inch))
-                        legend_text = "Position Legend: P - Pitcher, C - Catcher, 1B - First Base, 2B - Second Base, 3B - Third Base, SS - Shortstop, LF - Left Field, RF - Right Field, LC - Left Center, RC - Right Center"
+                        elements.append(Paragraph("Position Legend:", normal_style))
+                        legend_text = "P - Pitcher, C - Catcher, 1B - First Base, 2B - Second Base, 3B - Third Base, SS - Shortstop, "
+                        legend_text += "LF - Left Field, RF - Right Field, LC - Left Center, RC - Right Center, OUT - Player Unavailable"
                         elements.append(Paragraph(legend_text, normal_style))
                         
                         # Add footer
@@ -1464,6 +1553,7 @@ elif selected_tab == "Game Summary":
                     buffer.write("-" * 20 + "\n")
                     buffer.write("P - Pitcher, C - Catcher, 1B - First Base, 2B - Second Base, 3B - Third Base\n")
                     buffer.write("SS - Shortstop, LF - Left Field, RF - Right Field, LC - Left Center, RC - Right Center\n")
+                    buffer.write("OUT - Player Unavailable\n")
                     
                     # Get the text from the buffer
                     summary_text = buffer.getvalue()
