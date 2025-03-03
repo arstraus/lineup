@@ -1892,7 +1892,7 @@ elif selected_tab == "Game Summary":
                         
                         # Add footer
                         elements.append(Spacer(1, 0.3*inch))
-                        elements.append(Paragraph("Baseball Lineup Manager - Game Plan", 
+                        elements.append(Paragraph("LineupBoss - Game Plan", 
                                                  ParagraphStyle('Footer', fontSize=8, textColor=colors.gray)))
                         
                         # Build the PDF

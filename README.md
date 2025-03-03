@@ -1,100 +1,68 @@
-# Baseball Lineup Manager 🏆⚾
+# LineupBoss - Baseball Lineup Manager
 
-## Overview
+A comprehensive Streamlit application for managing baseball team lineups, batting orders, and fielding rotations.
 
-Baseball Lineup Manager is a comprehensive Streamlit application designed to help coaches and team managers efficiently manage team rosters, game schedules, batting orders, and fielding rotations.
+![LineupBoss](https://github.com/your-username/lineupboss/raw/main/screenshot.png)
 
-### Key Features
+## Features
 
-- 📋 Team Roster Management
-- 📆 Game Schedule Creation
-- 🏏 Batting Order Configuration
-- 🥎 Fielding Rotation Planning
-- 📊 Fairness Analysis
-  - Batting Position Distribution
-  - Fielding Position Distribution
-- 📝 Game Summary and Export
-- 💾 Data Import/Export Functionality
-
-## What's New
-
-- 🧭 **Sidebar Navigation**: Easy access to all features through a vertical sidebar
-- 📈 **Enhanced Visualizations**: Visual representation of batting and fielding fairness
-- 🔔 **Status Indicators**: At-a-glance view of what data is loaded
-- 📋 **Improved Validation**: Better error checking for positions and lineups
-
-## Prerequisites
-
-- Python 3.8+
-- pip (Python package manager)
+- **Team Management**: Create and manage team roster with player names and jersey numbers
+- **Game Scheduling**: Set up your season schedule with dates, times, and opponents
+- **Player Availability**: Track which players are available for each game
+- **Batting Order**: Create fair batting orders across all games
+- **Fielding Rotation**: Assign fielding positions for each inning
+- **Fairness Analysis**: Analyze how balanced your batting and fielding assignments are
+- **Game Plans**: Generate and export game-day lineup sheets in PDF or text format
+- **Data Management**: Save and load your team data for future use
 
 ## Installation
 
-1. Clone the repository:
+1. Clone this repository:
 ```bash
-git clone https://github.com/arstraus/lineup.git
-cd lineup
+git clone https://github.com/your-username/lineupboss.git
+cd lineupboss
 ```
 
-2. Create a virtual environment (optional but recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-```
-
-3. Install required dependencies:
+2. Install the required packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Running the Application
-
+3. Run the app:
 ```bash
 streamlit run lineup.py
 ```
 
-## How to Use
+## Usage Guide
 
-### Navigation
-- Use the sidebar on the left to navigate between different sections of the app
-- The "App Status" indicator in the sidebar shows what data is currently loaded
+### Step 1: Setup
+1. Start at the Team Setup tab to enter your team information and create your roster
+2. Create your game schedule with dates, times, and opponent information
+3. Use the Player Setup tab to mark availability for each game
 
-### Team Roster
-- Upload a CSV with player information
-- Download a template to help you create your roster
+### Step 2: Create Lineups
+1. Set batting orders for each game in the Batting Order tab
+2. Assign fielding positions for each inning in the Fielding Rotation tab
+3. Use validation tools to check for issues with your lineups
 
-### Game Schedule
-- Create and manage game schedules
-- Add opponents, dates, and number of innings
+### Step 3: Analyze Fairness
+1. Check the Batting Fairness tab to ensure all players get opportunities in different batting positions
+2. Use the Fielding Fairness tab to analyze playing time distribution across positions
 
-### Batting Order & Fielding Rotation
-- Configure batting orders for each game
-- Set fielding positions for each inning
-- Validate and analyze position fairness
+### Step 4: Game Day
+1. Visit the Game Summary tab to view complete game plans
+2. Export game plans as PDF or text files to share with coaches and players
+3. Save your data using the Data Management tab
 
-### Fairness Analysis
-- View visualizations of batting position distribution
-- Analyze fielding position fairness across all games
-- Identify players who need more variety in positions
+## Data Storage
 
-### Game Summary
-- View complete game plans
-- Export as PDF or text for game day use
+LineupBoss stores all data locally in your browser session. To persist data between sessions:
+1. Export your team data using the Data Management tab
+2. Store the JSON file securely
+3. Import the file when you want to continue working on your lineups
 
-### Data Management
-- Export your team data to continue working later
-- Import previously saved team data
-- Generate example data for testing
+## Requirements
 
-## Export and Import
-- Export your team data to continue working later
-- Share lineup configurations with other coaches
-
-## Tips for Coaches
-- Regularly check the fairness analysis to ensure all players get fair playing time
-- Use the PDF export feature to create game day guides for assistant coaches
-- Save your data after each major change to avoid losing your work
-
-## Contact
-
-Project Link: [https://github.com/arstraus/lineup](https://github.com/arstraus/lineup)
+- Python 3.8+
+- Streamlit 1.28+
+- See requirements.txt for complete dependencies
