@@ -1,3 +1,5 @@
+# LineupBoss baseball lineup manager
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,7 +9,7 @@ import json
 
 # Set page config
 st.set_page_config(
-    page_title="Baseball Lineup Manager",
+    page_title="LineupBoss",
     page_icon="⚾",
     layout="wide"
 )
@@ -261,7 +263,7 @@ def generate_game_plan_pdf(game_id, game_info, batting_order, fielding_data, pla
     
     # Add footer
     elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph("Baseball Lineup Manager - Game Plan", 
+    elements.append(Paragraph("LineupBoss - Game Plan", 
                              ParagraphStyle('Footer', fontSize=8, textColor=colors.gray)))
     
     # Build the PDF
@@ -355,7 +357,7 @@ def load_app_data(json_data):
 
 # Main app layout
 # Add a sidebar with tabs
-st.sidebar.title("⚾ Baseball Lineup Manager")
+st.sidebar.title("⚾ LineupBoss")
 
 # Define all tab names with Instructions as Tab 0
 tabs = [
@@ -383,7 +385,7 @@ if selected_tab != "Instructions":
 
 # Tab 0: Instructions
 if selected_tab == "Instructions":
-    st.markdown("# Welcome to the Baseball Lineup Manager")
+    st.markdown("# Welcome to LineupBoss")
     
     st.markdown("""
     This application helps baseball coaches manage team rosters, create fair batting orders and fielding rotations, 
@@ -1794,7 +1796,7 @@ elif selected_tab == "Game Summary":
                         
                         # Add footer
                         elements.append(Spacer(1, 0.3*inch))
-                        elements.append(Paragraph("Baseball Lineup Manager - Game Plan", 
+                        elements.append(Paragraph("LineupBoss - Game Plan", 
                                                  ParagraphStyle('Footer', fontSize=8, textColor=colors.gray)))
                         
                         # Build the PDF
@@ -2039,7 +2041,7 @@ elif selected_tab == "Data Management":
 
 # Footer
 st.markdown("---")
-st.markdown("Baseball Lineup Manager - Helping coaches create fair and balanced rotations")
+st.markdown("LineupBoss - Helping coaches create fair and balanced rotations")
 
 # Add a feedback/status section in the sidebar
 st.sidebar.markdown("---")
@@ -2057,5 +2059,5 @@ with st.sidebar.expander("App Status"):
 
 # Add app info in sidebar footer
 st.sidebar.markdown("---")
-st.sidebar.info("Baseball Lineup Manager v1.0")
+st.sidebar.info("LineupBoss v1.0")
 
