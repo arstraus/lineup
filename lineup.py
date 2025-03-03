@@ -357,8 +357,9 @@ def load_app_data(json_data):
 # Add a sidebar with tabs
 st.sidebar.title("⚾ Baseball Lineup Manager")
 
-# Define all tab names
+# Define all tab names with Instructions as Tab 0
 tabs = [
+    "Instructions",
     "Team Setup",
     "Game Schedule", 
     "Player Setup",
@@ -377,7 +378,167 @@ selected_tab = st.sidebar.radio("Navigation", tabs)
 st.session_state.active_tab = selected_tab
 
 # Main area title that shows the current tab
-st.title(f"⚾ {selected_tab}")
+if selected_tab != "Instructions":
+    st.title(f"⚾ {selected_tab}")
+
+# Tab 0: Instructions
+if selected_tab == "Instructions":
+    st.markdown("# Welcome to the Baseball Lineup Manager")
+    
+    st.markdown("""
+    This application helps baseball coaches manage team rosters, create fair batting orders and fielding rotations, 
+    and generate game plans. Follow the steps below to get started.
+    """)
+
+    # Overview diagram using a Streamlit flowchart-like layout
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown("### Step 1: Setup")
+        st.markdown("""
+        - Team Setup
+        - Game Schedule 
+        - Player Setup
+        """)
+    with col2:
+        st.markdown("### Step 2: Plan")
+        st.markdown("""
+        - Batting Order
+        - Fielding Rotation
+        """)
+    with col3:
+        st.markdown("### Step 3: Analyze")
+        st.markdown("""
+        - Batting Fairness
+        - Fielding Fairness
+        """)
+    with col4:
+        st.markdown("### Step 4: Share")
+        st.markdown("""
+        - Game Summary
+        - Data Management
+        """)
+
+    st.markdown("---")
+
+    # Quick Start
+    st.markdown("## 🚀 Quick Start Guide")
+    st.markdown("""
+    1. **Team Setup**: Enter team information and upload/create your roster
+    2. **Game Schedule**: Create your season schedule
+    3. **Player Setup**: Mark player availability for each game
+    4. **Batting Order**: Set your batting lineup for each game
+    5. **Fielding Rotation**: Assign positions for each inning
+    6. **Generate Game Plan**: View and export your game plans
+    7. **Export Your Data**: Save your work for future use
+    """)
+
+    st.markdown("---")
+
+    # Detailed tab instructions
+    with st.expander("📋 Detailed Tab Instructions", expanded=True):
+        st.markdown("""
+        ### Team Setup Tab
+        - Input team and coach information
+        - Create or upload a roster with player names and jersey numbers
+        - Add or remove players from your roster
+
+        ### Game Schedule Tab
+        - Create a season schedule with dates, opponents, and number of innings
+        - Edit game details as needed throughout the season
+
+        ### Player Setup Tab
+        - Mark which players are available for each game
+        - Indicate which players can play specialized positions (e.g., catcher)
+        - This affects batting orders and fielding rotations
+
+        ### Batting Order Tab
+        - Assign batting positions for each player across all games
+        - Automatically handle unavailable players
+        - Check for issues with your batting order
+
+        ### Fielding Rotation Tab
+        - Assign fielding positions for each player for each inning
+        - Auto-assign unavailable players to bench
+        - Check for position coverage and errors
+
+        ### Batting Fairness Tab
+        - Analyze how equitably batting positions are distributed
+        - View visual representations of batting position fairness
+        - Identify players who need different batting opportunities
+
+        ### Fielding Fairness Tab
+        - Track time spent in infield, outfield, and bench positions
+        - Analyze equity in fielding assignments
+        - Make data-driven decisions for future games
+
+        ### Game Summary Tab
+        - Generate comprehensive game plans
+        - Export as PDF or text format
+        - Share with coaches, players, and parents
+
+        ### Data Management Tab
+        - Export your team data for backup
+        - Import previously saved data
+        - Generate example data for testing
+        """)
+
+    st.markdown("---")
+
+    # Tips and best practices
+    with st.expander("💡 Tips and Best Practices"):
+        st.markdown("""
+        ### Player Management
+        - **Update availability early**: Set player availability as soon as you know who can attend each game
+        - **Rotate positions**: Give all players experience in different positions
+        - **Balance development with fairness**: Consider player skills but ensure fairness in playing time
+
+        ### Lineup Creation
+        - **Plan ahead**: Create batting orders and fielding rotations for multiple games in advance
+        - **Check the fairness analysis**: Use the fairness tabs to ensure all players get equal opportunities
+        - **Update after games**: Make adjustments based on actual playing time if games end early
+
+        ### Data Management
+        - **Save regularly**: Export your data after making significant changes
+        - **Create backups**: Keep multiple exported files as backups
+        - **Share with assistant coaches**: Export data for others to import and help with planning
+        """)
+
+    st.markdown("---")
+
+    # Common questions
+    with st.expander("❓ Frequently Asked Questions"):
+        st.markdown("""
+        ### General Questions
+        **Q: Will my data be saved between sessions?**  
+        A: Data is stored in your browser during the session. To keep your data for future use, export it using the Data Management tab.
+
+        **Q: How many players can I manage?**  
+        A: The app can handle teams of any size, but works best with 10-20 players.
+
+        **Q: Can I track multiple teams?**  
+        A: Yes, export each team's data separately and import as needed.
+
+        ### Lineup Questions
+        **Q: How do I handle players who arrive late or leave early?**  
+        A: Mark them as available but place them appropriately in the batting order and field positions.
+
+        **Q: What happens when a game has fewer innings than planned?**  
+        A: The app plans for the full game - make a note of actual playing time for fairness considerations.
+
+        **Q: How do I mark preferred positions for players?**  
+        A: The app doesn't explicitly track preferred positions, but you can use your knowledge when creating rotations.
+
+        ### Technical Questions
+        **Q: What if the PDF export doesn't work?**  
+        A: Ensure you have the ReportLab library installed, or use the text export option instead.
+
+        **Q: Can I edit a saved export file?**  
+        A: The export files are in JSON format and could be edited manually, but it's not recommended.
+
+        **Q: How can I share lineups with parents?**  
+        A: Generate a PDF or text game plan and share it via email or messaging apps.
+        """)
+
 
 # Tab 1: Team Setup
 if selected_tab == "Team Setup":
