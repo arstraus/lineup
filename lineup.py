@@ -729,7 +729,7 @@ elif selected_tab == "Game Schedule":
                 schedule_data.append({
                     "Game #": i,
                     "Date": None,
-                    "Time": None,  # Add Time field
+                    "Time": None,
                     "Opponent": "",
                     "Innings": 6
                 })
@@ -746,22 +746,43 @@ elif selected_tab == "Game Schedule":
         # Add Time column if it doesn't exist
         if "Time" not in st.session_state.schedule.columns:
             st.session_state.schedule["Time"] = None
+        
+        # Create a completely new DataFrame with exactly the columns we want
+        columns = ["Game #", "Date", "Time", "Opponent", "Innings"]
+        data = []
+        
+        # Copy the data row by row to ensure clean DataFrame creation
+        for _, row in st.session_state.schedule.iterrows():
+            data.append({
+                "Game #": row["Game #"],
+                "Date": row["Date"],
+                "Time": row["Time"] if "Time" in row and pd.notna(row["Time"]) else None,
+                "Opponent": row["Opponent"],
+                "Innings": row["Innings"]
+            })
+        
+        # Create a fresh DataFrame
+        display_schedule = pd.DataFrame(data, columns=columns)
             
+        # Create the data editor with explicit columns and hiding index
         edited_schedule = st.data_editor(
-            st.session_state.schedule,
+            display_schedule,
             use_container_width=True,
             num_rows="dynamic",
             column_config={
                 "Game #": st.column_config.NumberColumn("Game #", help="Game number"),
                 "Date": st.column_config.DateColumn("Date", help="Game date", format="YYYY-MM-DD"),
-                "Time": st.column_config.TimeColumn("Time", help="Game time"),  # Add Time column
+                "Time": st.column_config.TimeColumn("Time", help="Game time"),
                 "Opponent": st.column_config.TextColumn("Opponent", help="Opposing team"),
                 "Innings": st.column_config.NumberColumn("Innings", help="Number of innings", min_value=1, max_value=9),
             },
+            hide_index=True,
+            key="fresh_game_schedule_editor"
         )
         
         if st.button("Save Schedule"):
-            st.session_state.schedule = edited_schedule
+            # Save the edited schedule
+            st.session_state.schedule = edited_schedule.copy()
             st.success("Schedule saved!")
             
         # Add some helpful instructions
