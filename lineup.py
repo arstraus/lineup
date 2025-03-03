@@ -544,7 +544,11 @@ if selected_tab == "Instructions":
 
 # Tab 1: Team Setup
 if selected_tab == "Team Setup":
-   ## st.header("Team Setup")
+    ## st.header("Team Setup")
+    
+    # Track if we need to upload a roster in this session
+    if 'upload_roster_flag' not in st.session_state:
+        st.session_state.upload_roster_flag = False
     
     # Create columns for team info and roster management
     team_info_col, roster_col = st.columns([1, 2])
@@ -586,48 +590,68 @@ if selected_tab == "Team Setup":
     with roster_col:
         st.subheader("Team Roster Management")
         
+        # Option to upload a roster - placing this first for immediate feedback
+        upload_container = st.container()
+        with upload_container:
+            st.markdown("##### Upload Team Roster")
+            
+            # Callback for when file is uploaded
+            def process_roster_upload():
+                if st.session_state.roster_file is not None:
+                    try:
+                        df = pd.read_csv(st.session_state.roster_file)
+                        valid, message = validate_roster(df)
+                        
+                        if valid:
+                            st.session_state.roster = df
+                            st.session_state.upload_roster_flag = True
+                            st.session_state.upload_success = True
+                        else:
+                            st.session_state.upload_error = message
+                    except Exception as e:
+                        st.session_state.upload_error = f"Error uploading file: {str(e)}"
+            
+            # File uploader with on_change callback
+            roster_file = st.file_uploader(
+                "Upload your team roster CSV file", 
+                type=["csv"], 
+                key="roster_file",
+                on_change=process_roster_upload
+            )
+            
+            # Show success or error message
+            if 'upload_success' in st.session_state and st.session_state.upload_success:
+                st.success("Roster uploaded successfully!")
+                # Clear the flag after showing the message
+                st.session_state.upload_success = False
+                
+            if 'upload_error' in st.session_state and st.session_state.upload_error:
+                st.error(st.session_state.upload_error)
+                # Clear the error after showing it
+                st.session_state.upload_error = ""
+        
         # Option to download a template
         st.markdown("##### Download Roster Template")
         num_players = st.number_input("Number of players", min_value=1, max_value=30, value=14)
         template_df = create_empty_roster_template(num_players)
         st.markdown(get_csv_download_link(template_df, "roster_template.csv", "Download Roster Template"), unsafe_allow_html=True)
         
-        # Option to upload a roster
-        st.markdown("##### Upload Team Roster")
-        roster_file = st.file_uploader("Upload your team roster CSV file", type=["csv"])
-        
-        if roster_file is not None:
-            try:
-                df = pd.read_csv(roster_file)
-                valid, message = validate_roster(df)
-                
-                if valid:
-                    st.session_state.roster = df
-                    st.success("Roster uploaded successfully!")
-                    # Display with row numbers starting from 1
-                    display_df = df.copy()
-                    display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
-                    st.dataframe(display_df, use_container_width=True)
-                else:
-                    st.error(message)
-            except Exception as e:
-                st.error(f"Error uploading file: {str(e)}")
+        # Display current roster if it exists
+        if st.session_state.roster is not None:
+            st.subheader("Current Team Roster")
+            # Add a row index column that starts at 1
+            display_df = st.session_state.roster.copy()
+            display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
+            # Display the dataframe with row numbers visible
+            st.dataframe(display_df, use_container_width=True)
+            
+            # Add roster statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Players", len(st.session_state.roster))
     
-    # Display current roster if it exists
+    # Roster management actions (shown only if roster exists)
     if st.session_state.roster is not None:
-        st.subheader("Current Team Roster")
-        # Add a row index column that starts at 1
-        display_df = st.session_state.roster.copy()
-        display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
-        # Display the dataframe with row numbers visible
-        st.dataframe(display_df, use_container_width=True)
-        
-        # Add roster statistics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Players", len(st.session_state.roster))
-        
-        # Add roster management actions
         st.subheader("Roster Management")
         
         # Option to add a player
@@ -660,7 +684,7 @@ if selected_tab == "Team Setup":
                             })
                             st.session_state.roster = pd.concat([st.session_state.roster, new_player], ignore_index=True)
                             st.success(f"Added {new_first_name} {new_last_name} (#{new_jersey}) to roster")
-                            st.rerun()  # Refresh the page to show updated roster
+                            st.rerun()  # Use standard rerun
         
         # Option to remove a player
         with st.expander("Remove Player"):
@@ -680,7 +704,12 @@ if selected_tab == "Team Setup":
                 
                 # Show success message
                 st.success(f"Removed {selected_player} from roster")
-                st.rerun()  # Refresh the page to show updated roster
+                st.rerun()  # Use standard rerun
+    
+    # Force a rerun when a new roster is uploaded to ensure it displays immediately
+    if st.session_state.upload_roster_flag:
+        st.session_state.upload_roster_flag = False
+        st.rerun()  # Use standard rerun
 
 # Tab 2: Game Schedule
 elif selected_tab == "Game Schedule":
