@@ -700,6 +700,7 @@ elif selected_tab == "Game Schedule":
                 schedule_data.append({
                     "Game #": i,
                     "Date": None,
+                    "Time": None,  # Add Time field
                     "Opponent": "",
                     "Innings": 6
                 })
@@ -712,6 +713,10 @@ elif selected_tab == "Game Schedule":
         # Make sure the Date column is datetime type before editing
         if st.session_state.schedule["Date"].dtype != 'datetime64[ns]':
             st.session_state.schedule["Date"] = pd.to_datetime(st.session_state.schedule["Date"], errors='coerce')
+        
+        # Add Time column if it doesn't exist
+        if "Time" not in st.session_state.schedule.columns:
+            st.session_state.schedule["Time"] = None
             
         edited_schedule = st.data_editor(
             st.session_state.schedule,
@@ -720,6 +725,7 @@ elif selected_tab == "Game Schedule":
             column_config={
                 "Game #": st.column_config.NumberColumn("Game #", help="Game number"),
                 "Date": st.column_config.DateColumn("Date", help="Game date", format="YYYY-MM-DD"),
+                "Time": st.column_config.TimeColumn("Time", help="Game time"),  # Add Time column
                 "Opponent": st.column_config.TextColumn("Opponent", help="Opposing team"),
                 "Innings": st.column_config.NumberColumn("Innings", help="Number of innings", min_value=1, max_value=9),
             },
@@ -728,6 +734,24 @@ elif selected_tab == "Game Schedule":
         if st.button("Save Schedule"):
             st.session_state.schedule = edited_schedule
             st.success("Schedule saved!")
+            
+        # Add some helpful instructions
+        with st.expander("Schedule Instructions"):
+            st.markdown("""
+            ### How to use the Game Schedule tab:
+            
+            1. **Set the number of games** and click "Initialize Schedule" if starting fresh
+            2. **Enter game details** in the table:
+               - **Game #**: Automatically numbered, but can be changed if needed
+               - **Date**: Click to select the game date from a calendar
+               - **Time**: Set the game start time
+               - **Opponent**: Enter the name of the opposing team
+               - **Innings**: Set the number of innings scheduled (typically 6-9)
+            3. **Click "Save Schedule"** after making changes
+            4. **Add rows** using the + button at the bottom of the table if needed
+            
+            Your schedule will be available throughout the app for creating lineups and rotations.
+            """)
 
 # Tab 3: Player Setup
 elif selected_tab == "Player Setup":
@@ -884,7 +908,17 @@ elif selected_tab == "Batting Order":
                 # Format date if it exists
                 try:
                     date_str = game["Date"].strftime("%m/%d")
-                    game_label += f" ({date_str})"
+                    game_label += f" ({date_str}"
+                    
+                    # Add time if available
+                    if "Time" in game and pd.notna(game["Time"]):
+                        try:
+                            time_str = game["Time"].strftime("%I:%M%p")
+                            game_label += f" {time_str}"
+                        except:
+                            pass
+                    
+                    game_label += ")"
                 except:
                     pass
             col_headers.append(game_label)
@@ -903,7 +937,17 @@ elif selected_tab == "Batting Order":
             if pd.notna(game["Date"]):
                 try:
                     date_str = game["Date"].strftime("%m/%d")
-                    game_col += f" ({date_str})"
+                    game_col += f" ({date_str}"
+                    
+                    # Add time if available
+                    if "Time" in game and pd.notna(game["Time"]):
+                        try:
+                            time_str = game["Time"].strftime("%I:%M%p")
+                            game_col += f" {time_str}"
+                        except:
+                            pass
+                    
+                    game_col += ")"
                 except:
                     pass
             
@@ -972,7 +1016,17 @@ elif selected_tab == "Batting Order":
                 if pd.notna(game["Date"]):
                     try:
                         date_str = game["Date"].strftime("%m/%d")
-                        game_col += f" ({date_str})"
+                        game_col += f" ({date_str}"
+                        
+                        # Add time if available
+                        if "Time" in game and pd.notna(game["Time"]):
+                            try:
+                                time_str = game["Time"].strftime("%I:%M%p")
+                                game_col += f" {time_str}"
+                            except:
+                                pass
+                        
+                        game_col += ")"
                     except:
                         pass
                 
@@ -1040,7 +1094,17 @@ elif selected_tab == "Batting Order":
                 if pd.notna(game["Date"]):
                     try:
                         date_str = game["Date"].strftime("%m/%d")
-                        game_col += f" ({date_str})"
+                        game_col += f" ({date_str}"
+                        
+                        # Add time if available
+                        if "Time" in game and pd.notna(game["Time"]):
+                            try:
+                                time_str = game["Time"].strftime("%I:%M%p")
+                                game_col += f" {time_str}"
+                            except:
+                                pass
+                        
+                        game_col += ")"
                     except:
                         pass
                 
@@ -1127,7 +1191,15 @@ elif selected_tab == "Fielding Rotation":
         # Get the game information
         game_info = st.session_state.schedule[st.session_state.schedule["Game #"] == selected_game].iloc[0]
         innings = game_info["Innings"]
-        st.write(f"Game {selected_game} vs {game_info['Opponent']} on {game_info['Date']} ({innings} innings)")
+        
+        # Format date and time
+        game_date_time = f"{game_info['Date']}"
+        if "Time" in game_info and pd.notna(game_info["Time"]):
+            # Format the time
+            time_str = game_info["Time"].strftime("%I:%M %p") if isinstance(game_info["Time"], pd.Timestamp) else game_info["Time"]
+            game_date_time += f" at {time_str}"
+
+        st.write(f"Game {selected_game} vs {game_info['Opponent']} on {game_date_time} ({innings} innings)")
         
         # Initialize fielding rotation for this game if needed
         if selected_game not in st.session_state.fielding_rotations:
@@ -1544,7 +1616,19 @@ elif selected_tab == "Game Summary":
                     st.write(f"**Assistant Coach(es):** {', '.join(asst_coaches)}")
         
         st.write(f"**Opponent:** {game_info['Opponent']}")
-        st.write(f"**Date:** {game_info['Date']}")
+        
+        # Update this line to include time if available - fixed to prevent double time display
+        if "Time" in game_info and pd.notna(game_info["Time"]):
+            # Format the time
+            time_str = game_info["Time"].strftime("%I:%M %p") if isinstance(game_info["Time"], pd.Timestamp) else game_info["Time"]
+            
+            # Format the date without time component
+            date_str = game_info['Date'].strftime("%Y-%m-%d") if isinstance(game_info['Date'], pd.Timestamp) else game_info['Date']
+            
+            st.write(f"**Date/Time:** {date_str} at {time_str}")
+        else:
+            st.write(f"**Date:** {game_info['Date']}")
+            
         st.write(f"**Innings:** {innings}")
         
         # Check if we have data for this game
@@ -1706,7 +1790,19 @@ elif selected_tab == "Game Summary":
                                 elements.append(Paragraph(coach_text, normal_style))
                         
                         elements.append(Paragraph(f"Opponent: {game_info['Opponent']}", normal_style))
-                        elements.append(Paragraph(f"Date: {game_info['Date']}", normal_style))
+                        
+                        # Update this section to include time if available - fixed to prevent double time display
+                        if "Time" in game_info and pd.notna(game_info["Time"]):
+                            # Format the time
+                            time_str = game_info["Time"].strftime("%I:%M %p") if isinstance(game_info["Time"], pd.Timestamp) else game_info["Time"]
+                            
+                            # Format the date without time component
+                            date_str = game_info['Date'].strftime("%Y-%m-%d") if isinstance(game_info['Date'], pd.Timestamp) else game_info['Date']
+                            
+                            elements.append(Paragraph(f"Date/Time: {date_str} at {time_str}", normal_style))
+                        else:
+                            elements.append(Paragraph(f"Date: {game_info['Date']}", normal_style))
+                            
                         elements.append(Paragraph(f"Innings: {innings}", normal_style))
                         elements.append(Spacer(1, 0.25*inch))
                         
@@ -1796,7 +1892,7 @@ elif selected_tab == "Game Summary":
                         
                         # Add footer
                         elements.append(Spacer(1, 0.3*inch))
-                        elements.append(Paragraph("LineupBoss - Game Plan", 
+                        elements.append(Paragraph("Baseball Lineup Manager - Game Plan", 
                                                  ParagraphStyle('Footer', fontSize=8, textColor=colors.gray)))
                         
                         # Build the PDF
@@ -1853,7 +1949,19 @@ elif selected_tab == "Game Summary":
                         if head_coach:
                             buffer.write(f"{coach_text}\n")
                     
-                    buffer.write(f"GAME {selected_game} LINEUP - {game_info['Opponent']} - {game_info['Date']}\n")
+                    # Update to include time if available - fixed to prevent double time display
+                    if "Time" in game_info and pd.notna(game_info["Time"]):
+                        # Format the time
+                        time_str = game_info["Time"].strftime("%I:%M %p") if isinstance(game_info["Time"], pd.Timestamp) else game_info["Time"]
+                        
+                        # Format the date without time component
+                        date_str = game_info['Date'].strftime("%Y-%m-%d") if isinstance(game_info['Date'], pd.Timestamp) else game_info['Date']
+                        
+                        game_date_time = f"{date_str} at {time_str}"
+                    else:
+                        game_date_time = f"{game_info['Date']}"
+                    
+                    buffer.write(f"GAME {selected_game} LINEUP - {game_info['Opponent']} - {game_date_time}\n")
                     buffer.write("=" * 80 + "\n\n")
                     
                     # Convert dataframe to text format
