@@ -184,6 +184,13 @@ def analyze_batting_fairness():
         players = st.session_state.roster.copy()
         players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
         
+        # Create a mapping from jersey number to player name for easier lookup
+        jersey_to_player = {}
+        for _, player in players.iterrows():
+            jersey = str(player["Jersey Number"])
+            player_name = player["Player"]
+            jersey_to_player[jersey] = player_name
+        
         # Initialize counters
         num_players = len(players)
         batting_counts = pd.DataFrame(0, index=players["Player"], columns=range(1, num_players + 1))
@@ -191,12 +198,9 @@ def analyze_batting_fairness():
         # Count the batting positions for each player across all games
         for game_id, batting_order in st.session_state.batting_orders.items():
             for i, jersey in enumerate(batting_order, 1):
-                if i <= len(batting_counts.columns):
-                    # Find the player with this jersey number
-                    player_idx = players[players["Jersey Number"].astype(str) == jersey].index
-                    if len(player_idx) > 0:
-                        player = players.iloc[player_idx[0]]["Player"]
-                        batting_counts.loc[player, i] += 1
+                if i <= len(batting_counts.columns) and jersey in jersey_to_player:
+                    player = jersey_to_player[jersey]
+                    batting_counts.loc[player, i] += 1
         
         return batting_counts
     return None
@@ -207,6 +211,13 @@ def analyze_fielding_fairness():
         # Create a dataframe to count the position types for each player
         players = st.session_state.roster.copy()
         players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
+        
+        # Create a mapping from jersey number to player name for easier lookup
+        jersey_to_player = {}
+        for _, player in players.iterrows():
+            jersey = str(player["Jersey Number"])
+            player_name = player["Player"]
+            jersey_to_player[jersey] = player_name
         
         # Initialize counters for infield, outfield, and bench positions
         position_counts = pd.DataFrame(0, index=players["Player"], columns=["Infield", "Outfield", "Bench", "Total Innings"])
@@ -221,10 +232,8 @@ def analyze_fielding_fairness():
                     inning_key = f"Inning {inning}"
                     if inning_key in fielding_data:
                         for jersey, position in fielding_data[inning_key].items():
-                            # Find the player with this jersey number
-                            player_idx = players[players["Jersey Number"].astype(str) == jersey].index
-                            if len(player_idx) > 0:
-                                player = players.iloc[player_idx[0]]["Player"]
+                            if jersey in jersey_to_player:
+                                player = jersey_to_player[jersey]
                                 position_counts.loc[player, "Total Innings"] += 1
                                 
                                 if position in INFIELD:
