@@ -27,6 +27,12 @@ if 'active_tab' not in st.session_state:
     st.session_state.active_tab = "Team Roster"
 if 'player_availability' not in st.session_state:
     st.session_state.player_availability = {}
+if 'converted_to_jersey_based' not in st.session_state:
+    st.session_state.converted_to_jersey_based = False
+
+# After initializing all session state variables
+if not st.session_state.converted_to_jersey_based and st.session_state.roster is not None:
+    convert_to_jersey_based_data()
 
 # Define positions
 POSITIONS = ["Pitcher", "Catcher", "1B", "2B", "3B", "SS", "LF", "RF", "LC", "RC", "Bench"]
@@ -69,6 +75,108 @@ def validate_roster(df):
     
     return True, "Roster is valid"
 
+# Function to convert existing index-based data to jersey-based data
+def convert_to_jersey_based_data():
+    """Convert existing index-based data to jersey number-based data"""
+    if st.session_state.roster is None:
+        return
+    
+    # Get jersey numbers for the conversion
+    jersey_numbers = st.session_state.roster["Jersey Number"].astype(str).tolist()
+    
+    # Convert batting orders
+    new_batting_orders = {}
+    for game_id, order in st.session_state.batting_orders.items():
+        # Check if it's already in jersey-based format (contains strings)
+        if any(isinstance(item, str) for item in order):
+            new_batting_orders[game_id] = order
+        else:
+            # Convert from index-based to jersey-based
+            new_order = []
+            for idx in order:
+                if idx < len(jersey_numbers):
+                    new_order.append(jersey_numbers[idx])
+            new_batting_orders[game_id] = new_order
+    st.session_state.batting_orders = new_batting_orders
+    
+    # Convert fielding rotations
+    new_fielding_rotations = {}
+    for game_id, innings in st.session_state.fielding_rotations.items():
+        new_innings = {}
+        for inning_key, positions in innings.items():
+            # Check if it's already in jersey-based format (a dictionary)
+            if isinstance(positions, dict):
+                new_innings[inning_key] = positions
+            else:
+                # Convert from list to dictionary
+                new_positions = {}
+                for idx, position in enumerate(positions):
+                    if idx < len(jersey_numbers):
+                        jersey = jersey_numbers[idx]
+                        new_positions[jersey] = position
+                new_innings[inning_key] = new_positions
+        new_fielding_rotations[game_id] = new_innings
+    st.session_state.fielding_rotations = new_fielding_rotations
+    
+    # Convert player availability
+    new_availability = {}
+    for game_id, availability in st.session_state.player_availability.items():
+        new_game_avail = {}
+        for key, values in availability.items():
+            # Check if it's already in jersey-based format (a dictionary)
+            if isinstance(values, dict):
+                new_game_avail[key] = values
+            else:
+                # Convert from list to dictionary
+                new_values = {}
+                for idx, value in enumerate(values):
+                    if idx < len(jersey_numbers):
+                        jersey = jersey_numbers[idx]
+                        new_values[jersey] = value
+                new_game_avail[key] = new_values
+        new_availability[game_id] = new_game_avail
+    st.session_state.player_availability = new_availability
+    
+    # Set the flag to indicate we're using jersey-based data
+    st.session_state.converted_to_jersey_based = True
+
+# Function to update jersey number throughout the app
+def update_jersey_number(old_jersey, new_jersey):
+    """Update references when a player's jersey number changes"""
+    old_jersey_str = str(old_jersey)
+    new_jersey_str = str(new_jersey)
+    
+    # Update batting orders
+    for game_id, order in st.session_state.batting_orders.items():
+        if old_jersey_str in order:
+            st.session_state.batting_orders[game_id] = [
+                new_jersey_str if j == old_jersey_str else j for j in order
+            ]
+    
+    # Update fielding rotations
+    for game_id, innings in st.session_state.fielding_rotations.items():
+        for inning_key, positions in innings.items():
+            if old_jersey_str in positions:
+                position = positions[old_jersey_str]
+                del positions[old_jersey_str]
+                positions[new_jersey_str] = position
+    
+    # Update player availability
+    for game_id, availability in st.session_state.player_availability.items():
+        for key, values in availability.items():
+            if old_jersey_str in values:
+                value = values[old_jersey_str]
+                del values[old_jersey_str]
+                values[new_jersey_str] = value
+
+# Call the conversion function once (only if data exists and hasn't been converted)
+if (not st.session_state.converted_to_jersey_based and
+    st.session_state.roster is not None and
+    st.session_state.batting_orders and
+    any(isinstance(item, list) for item in st.session_state.batting_orders.values())):
+    convert_to_jersey_based_data()
+    st.session_state.converted_to_jersey_based = True
+
 def analyze_batting_fairness():
     """Analyze the fairness of batting orders across all games"""
     if not st.session_state.roster is None and st.session_state.batting_orders:
@@ -82,10 +190,13 @@ def analyze_batting_fairness():
         
         # Count the batting positions for each player across all games
         for game_id, batting_order in st.session_state.batting_orders.items():
-            for i, player_idx in enumerate(batting_order, 1):
-                if i <= len(batting_counts.columns) and player_idx < len(players):
-                    player = players.iloc[player_idx]["Player"]
-                    batting_counts.loc[player, i] += 1
+            for i, jersey in enumerate(batting_order, 1):
+                if i <= len(batting_counts.columns):
+                    # Find the player with this jersey number
+                    player_idx = players[players["Jersey Number"].astype(str) == jersey].index
+                    if len(player_idx) > 0:
+                        player = players.iloc[player_idx[0]]["Player"]
+                        batting_counts.loc[player, i] += 1
         
         return batting_counts
     return None
@@ -109,9 +220,11 @@ def analyze_fielding_fairness():
                 for inning in range(1, innings + 1):
                     inning_key = f"Inning {inning}"
                     if inning_key in fielding_data:
-                        for player_idx, position in enumerate(fielding_data[inning_key]):
-                            if player_idx < len(players):
-                                player = players.iloc[player_idx]["Player"]
+                        for jersey, position in fielding_data[inning_key].items():
+                            # Find the player with this jersey number
+                            player_idx = players[players["Jersey Number"].astype(str) == jersey].index
+                            if len(player_idx) > 0:
+                                player = players.iloc[player_idx[0]]["Player"]
                                 position_counts.loc[player, "Total Innings"] += 1
                                 
                                 if position in INFIELD:
@@ -306,7 +419,8 @@ def save_app_data():
         "schedule": st.session_state.schedule.to_dict() if st.session_state.schedule is not None else None,
         "batting_orders": st.session_state.batting_orders,
         "fielding_rotations": st.session_state.fielding_rotations,
-        "player_availability": st.session_state.player_availability
+        "player_availability": st.session_state.player_availability,
+        "converted_to_jersey_based": True  # Always save as jersey-based format
     }
     
     # Use the custom encoder to handle special data types
@@ -332,6 +446,9 @@ def load_app_data(json_data):
     # Restore roster
     if data["roster"] is not None:
         st.session_state.roster = pd.DataFrame.from_dict(data["roster"])
+        # Convert Jersey Number to string type for consistency
+        if "Jersey Number" in st.session_state.roster.columns:
+            st.session_state.roster["Jersey Number"] = st.session_state.roster["Jersey Number"].astype(str)
     
     # Restore schedule
     if data["schedule"] is not None:
@@ -354,6 +471,9 @@ def load_app_data(json_data):
     st.session_state.fielding_rotations = {int(k) if k.isdigit() else k: v for k, v in st.session_state.fielding_rotations.items()}
     if "player_availability" in data:
         st.session_state.player_availability = {int(k) if k.isdigit() else k: v for k, v in st.session_state.player_availability.items()}
+    
+    # Set the flag that we're using jersey-based data
+    st.session_state.converted_to_jersey_based = True
 
 # Main app layout
 # Add a sidebar with tabs
@@ -603,9 +723,22 @@ if selected_tab == "Team Setup":
                         valid, message = validate_roster(df)
                         
                         if valid:
+                            # Store the current roster for comparison if it exists
+                            if st.session_state.roster is not None:
+                                st.session_state.previous_roster = st.session_state.roster.copy()
+                            
                             st.session_state.roster = df
+                            
+                            # Convert Jersey Number to string type for consistency
+                            st.session_state.roster["Jersey Number"] = st.session_state.roster["Jersey Number"].astype(str)
+                            
                             st.session_state.upload_roster_flag = True
                             st.session_state.upload_success = True
+                            
+                            # If this is a new roster and jersey-based conversion is needed
+                            if not st.session_state.converted_to_jersey_based and st.session_state.batting_orders:
+                                convert_to_jersey_based_data()
+                                st.session_state.converted_to_jersey_based = True
                         else:
                             st.session_state.upload_error = message
                     except Exception as e:
@@ -639,11 +772,46 @@ if selected_tab == "Team Setup":
         # Display current roster if it exists
         if st.session_state.roster is not None:
             st.subheader("Current Team Roster")
+            
+            # Store the current roster for comparison
+            if 'previous_roster' not in st.session_state:
+                st.session_state.previous_roster = st.session_state.roster.copy()
+            
             # Add a row index column that starts at 1
             display_df = st.session_state.roster.copy()
             display_df.index = range(1, len(display_df) + 1)  # Set index to start at 1
-            # Display the dataframe with row numbers visible
-            st.dataframe(display_df, use_container_width=True)
+            
+            # Make the displayed roster editable
+            edited_roster = st.data_editor(
+                display_df, 
+                use_container_width=True,
+                key="roster_editor"
+            )
+            
+            # Save button for roster edits
+            if st.button("Save Roster Changes"):
+                # Check for jersey number changes
+                for _, row in edited_roster.iterrows():
+                    current_jersey = str(row["Jersey Number"])
+                    # Find this player in the previous roster by name
+                    prev_player = st.session_state.previous_roster[
+                        (st.session_state.previous_roster["First Name"] == row["First Name"]) & 
+                        (st.session_state.previous_roster["Last Name"] == row["Last Name"])
+                    ]
+                    
+                    if not prev_player.empty:
+                        prev_jersey = str(prev_player.iloc[0]["Jersey Number"])
+                        if prev_jersey != current_jersey:
+                            # Update all references to this jersey number
+                            update_jersey_number(prev_jersey, current_jersey)
+                
+                # Update the roster
+                st.session_state.roster = edited_roster.copy()
+                # Reset index if it was changed in the editor
+                st.session_state.roster.reset_index(drop=True, inplace=True)
+                # Update the previous roster for next comparison
+                st.session_state.previous_roster = st.session_state.roster.copy()
+                st.success("Roster changes saved!")
             
             # Add roster statistics
             col1, col2, col3 = st.columns(3)
@@ -673,16 +841,84 @@ if selected_tab == "Team Setup":
                         st.error("Please fill in all fields")
                     else:
                         # Check if jersey number already exists
-                        if new_jersey in st.session_state.roster["Jersey Number"].values:
+                        if str(new_jersey) in st.session_state.roster["Jersey Number"].astype(str).values:
                             st.error(f"Jersey number {new_jersey} already exists")
                         else:
+                            # Ensure data is in jersey-based format before adding a player
+                            if not st.session_state.converted_to_jersey_based:
+                                convert_to_jersey_based_data()
+                                st.session_state.converted_to_jersey_based = True
+                                
                             # Add new player to roster
                             new_player = pd.DataFrame({
                                 "First Name": [new_first_name],
                                 "Last Name": [new_last_name],
-                                "Jersey Number": [new_jersey]
+                                "Jersey Number": [str(new_jersey)]
                             })
+                            
+                            # Add to roster
                             st.session_state.roster = pd.concat([st.session_state.roster, new_player], ignore_index=True)
+                            
+                            # Update the previous roster for comparison
+                            st.session_state.previous_roster = st.session_state.roster.copy()
+                            
+                            # Add new player to all batting orders
+                            new_jersey_str = str(new_jersey)
+                            for game_id in st.session_state.batting_orders:
+                                # Add the new player to the end of each batting order
+                                st.session_state.batting_orders[game_id].append(new_jersey_str)
+                            
+                            # Add new player to all fielding rotations
+                            for game_id in st.session_state.fielding_rotations:
+                                for inning_key in st.session_state.fielding_rotations[game_id]:
+                                    # Check if the fielding rotation for this inning is a list (old format) or dict (new format)
+                                    if isinstance(st.session_state.fielding_rotations[game_id][inning_key], list):
+                                        # Convert this inning's positions to jersey-based dictionary if it's still a list
+                                        positions_list = st.session_state.fielding_rotations[game_id][inning_key]
+                                        positions_dict = {}
+                                        for idx, position in enumerate(positions_list):
+                                            if idx < len(st.session_state.roster) - 1:  # Exclude the newly added player
+                                                jersey = str(st.session_state.roster.iloc[idx]["Jersey Number"])
+                                                positions_dict[jersey] = position
+                                        
+                                        # Replace the list with the dictionary
+                                        st.session_state.fielding_rotations[game_id][inning_key] = positions_dict
+                                    
+                                    # Now it's safe to add the new player
+                                    st.session_state.fielding_rotations[game_id][inning_key][new_jersey_str] = "Bench"
+                            
+                            # Add new player to availability data
+                            for game_id in st.session_state.player_availability:
+                                if "Available" in st.session_state.player_availability[game_id]:
+                                    # Check if it's a list (old format) or dict (new format)
+                                    if isinstance(st.session_state.player_availability[game_id]["Available"], list):
+                                        # Convert to dictionary
+                                        avail_list = st.session_state.player_availability[game_id]["Available"]
+                                        avail_dict = {}
+                                        for idx, is_available in enumerate(avail_list):
+                                            if idx < len(st.session_state.roster) - 1:  # Exclude the newly added player
+                                                jersey = str(st.session_state.roster.iloc[idx]["Jersey Number"])
+                                                avail_dict[jersey] = is_available
+                                        st.session_state.player_availability[game_id]["Available"] = avail_dict
+                                    
+                                    # Now add the new player
+                                    st.session_state.player_availability[game_id]["Available"][new_jersey_str] = True
+                                
+                                if "Can Play Catcher" in st.session_state.player_availability[game_id]:
+                                    # Check if it's a list (old format) or dict (new format)
+                                    if isinstance(st.session_state.player_availability[game_id]["Can Play Catcher"], list):
+                                        # Convert to dictionary
+                                        catcher_list = st.session_state.player_availability[game_id]["Can Play Catcher"]
+                                        catcher_dict = {}
+                                        for idx, can_catch in enumerate(catcher_list):
+                                            if idx < len(st.session_state.roster) - 1:  # Exclude the newly added player
+                                                jersey = str(st.session_state.roster.iloc[idx]["Jersey Number"])
+                                                catcher_dict[jersey] = can_catch
+                                        st.session_state.player_availability[game_id]["Can Play Catcher"] = catcher_dict
+                                    
+                                    # Now add the new player
+                                    st.session_state.player_availability[game_id]["Can Play Catcher"][new_jersey_str] = False
+                            
                             st.success(f"Added {new_first_name} {new_last_name} (#{new_jersey}) to roster")
                             st.rerun()  # Use standard rerun
         
@@ -696,11 +932,63 @@ if selected_tab == "Team Setup":
             selected_player = st.selectbox("Select player to remove", player_options)
             
             if st.button("Remove Selected Player"):
+                # Ensure data is in jersey-based format before removing a player
+                if not st.session_state.converted_to_jersey_based:
+                    convert_to_jersey_based_data()
+                    st.session_state.converted_to_jersey_based = True
+                
                 # Find the index of the selected player
                 selected_idx = players[players["Player"] == selected_player].index[0]
                 
+                # Get the jersey number before removing the player
+                jersey_to_remove = str(st.session_state.roster.iloc[selected_idx]["Jersey Number"])
+                
                 # Remove player from roster
                 st.session_state.roster = st.session_state.roster.drop(selected_idx).reset_index(drop=True)
+                
+                # Update the previous roster for comparison
+                st.session_state.previous_roster = st.session_state.roster.copy()
+                
+                # Update batting orders to remove the player
+                for game_id in st.session_state.batting_orders:
+                    st.session_state.batting_orders[game_id] = [
+                        j for j in st.session_state.batting_orders[game_id] if j != jersey_to_remove
+                    ]
+                
+                # Update fielding rotations to remove the player
+                for game_id in st.session_state.fielding_rotations:
+                    for inning_key in st.session_state.fielding_rotations[game_id]:
+                        # Check if the fielding rotation is in dictionary format
+                        if isinstance(st.session_state.fielding_rotations[game_id][inning_key], dict):
+                            if jersey_to_remove in st.session_state.fielding_rotations[game_id][inning_key]:
+                                del st.session_state.fielding_rotations[game_id][inning_key][jersey_to_remove]
+                        elif isinstance(st.session_state.fielding_rotations[game_id][inning_key], list):
+                            # If it's still a list, convert it to a dictionary first
+                            positions_list = st.session_state.fielding_rotations[game_id][inning_key]
+                            positions_dict = {}
+                            for idx, position in enumerate(positions_list):
+                                if idx < len(st.session_state.roster):
+                                    jersey = str(st.session_state.roster.iloc[idx]["Jersey Number"])
+                                    positions_dict[jersey] = position
+                            st.session_state.fielding_rotations[game_id][inning_key] = positions_dict
+                
+                # Update player availability data
+                for game_id in st.session_state.player_availability:
+                    for key in ["Available", "Can Play Catcher"]:
+                        if key in st.session_state.player_availability[game_id]:
+                            # Check if the availability data is in dictionary format
+                            if isinstance(st.session_state.player_availability[game_id][key], dict):
+                                if jersey_to_remove in st.session_state.player_availability[game_id][key]:
+                                    del st.session_state.player_availability[game_id][key][jersey_to_remove]
+                            elif isinstance(st.session_state.player_availability[game_id][key], list):
+                                # If it's still a list, convert it to a dictionary first
+                                avail_list = st.session_state.player_availability[game_id][key]
+                                avail_dict = {}
+                                for idx, value in enumerate(avail_list):
+                                    if idx < len(st.session_state.roster):
+                                        jersey = str(st.session_state.roster.iloc[idx]["Jersey Number"])
+                                        avail_dict[jersey] = value
+                                st.session_state.player_availability[game_id][key] = avail_dict
                 
                 # Show success message
                 st.success(f"Removed {selected_player} from roster")
@@ -830,33 +1118,33 @@ elif selected_tab == "Player Setup":
         # Initialize player availability for this game if needed
         if selected_game not in st.session_state.player_availability:
             st.session_state.player_availability[selected_game] = {
-                "Available": [True] * len(players),
-                "Can Play Catcher": [False] * len(players)
+                "Available": {},
+                "Can Play Catcher": {}
             }
-        
-        # Ensure lists are the right length (in case roster changed)
-        if len(st.session_state.player_availability[selected_game]["Available"]) != len(players):
-            # Add True for new players
-            if len(st.session_state.player_availability[selected_game]["Available"]) < len(players):
-                st.session_state.player_availability[selected_game]["Available"].extend(
-                    [True] * (len(players) - len(st.session_state.player_availability[selected_game]["Available"]))
-                )
-                st.session_state.player_availability[selected_game]["Can Play Catcher"].extend(
-                    [False] * (len(players) - len(st.session_state.player_availability[selected_game]["Can Play Catcher"]))
-                )
-            else:  # Remove extras if roster got smaller
-                st.session_state.player_availability[selected_game]["Available"] = \
-                    st.session_state.player_availability[selected_game]["Available"][:len(players)]
-                st.session_state.player_availability[selected_game]["Can Play Catcher"] = \
-                    st.session_state.player_availability[selected_game]["Can Play Catcher"][:len(players)]
+            # Initialize with all players available
+            for _, player in players.iterrows():
+                jersey = str(player["Jersey Number"])
+                st.session_state.player_availability[selected_game]["Available"][jersey] = True
+                st.session_state.player_availability[selected_game]["Can Play Catcher"][jersey] = False
         
         # Create a dataframe for the player setup grid
-        setup_df = pd.DataFrame({
-            "Player": players["Player"].tolist(),
-            "Jersey #": players["Jersey Number"].tolist(),
-            "Available": st.session_state.player_availability[selected_game]["Available"],
-            "Can Play Catcher": st.session_state.player_availability[selected_game]["Can Play Catcher"]
-        })
+        setup_data = []
+        for _, player in players.iterrows():
+            jersey = str(player["Jersey Number"])
+            player_name = f"{player['First Name']} {player['Last Name']}"
+            
+            # Get availability and catcher info for this player
+            available = st.session_state.player_availability[selected_game]["Available"].get(jersey, True)
+            can_play_catcher = st.session_state.player_availability[selected_game]["Can Play Catcher"].get(jersey, False)
+            
+            setup_data.append({
+                "Player": player_name,
+                "Jersey #": jersey,
+                "Available": available,
+                "Can Play Catcher": can_play_catcher
+            })
+        
+        setup_df = pd.DataFrame(setup_data)
         
         # Add index starting from 1 instead of 0
         setup_df.index = range(1, len(setup_df) + 1)
@@ -867,7 +1155,7 @@ elif selected_tab == "Player Setup":
             use_container_width=True,
             column_config={
                 "Player": st.column_config.TextColumn("Player", disabled=True),
-                "Jersey #": st.column_config.NumberColumn("Jersey #", disabled=True),
+                "Jersey #": st.column_config.TextColumn("Jersey #", disabled=True),
                 "Available": st.column_config.CheckboxColumn("Available for Game", help="Check if player is available for this game"),
                 "Can Play Catcher": st.column_config.CheckboxColumn("Can Play Catcher", help="Check if player can play catcher position")
             },
@@ -878,30 +1166,38 @@ elif selected_tab == "Player Setup":
         # Save button
         if st.button("Save Player Setup", key="save_player_setup"):
             # Extract the updated values from the edited dataframe
-            st.session_state.player_availability[selected_game]["Available"] = edited_df["Available"].tolist()
-            st.session_state.player_availability[selected_game]["Can Play Catcher"] = edited_df["Can Play Catcher"].tolist()
+            for _, row in edited_df.iterrows():
+                jersey = str(row["Jersey #"])
+                st.session_state.player_availability[selected_game]["Available"][jersey] = row["Available"]
+                st.session_state.player_availability[selected_game]["Can Play Catcher"][jersey] = row["Can Play Catcher"]
             
             st.success("Player setup saved successfully!")
             
             # Update the batting and fielding tabs with this information
             if selected_game in st.session_state.batting_orders:
-                # Get indices of unavailable players
-                unavailable_indices = [i for i, available in enumerate(edited_df["Available"].tolist()) if not available]
+                # Get unavailable player jerseys
+                unavailable_jerseys = [
+                    str(row["Jersey #"]) for _, row in edited_df.iterrows() if not row["Available"]
+                ]
                 
-                # Create a new batting order that excludes unavailable players
-                current_order = st.session_state.batting_orders[selected_game]
-                new_order = [idx for idx in current_order if idx not in unavailable_indices]
-                
-                # Add unavailable players at the end (bench)
-                new_order.extend(unavailable_indices)
+                # Move unavailable players to the end of the batting order
+                available_players = [j for j in st.session_state.batting_orders[selected_game] if j not in unavailable_jerseys]
+                unavailable_players = [j for j in st.session_state.batting_orders[selected_game] if j in unavailable_jerseys]
                 
                 # Update the batting order
-                st.session_state.batting_orders[selected_game] = new_order
+                st.session_state.batting_orders[selected_game] = available_players + unavailable_players
+                
+                # Update fielding rotations to mark unavailable players as OUT
+                if selected_game in st.session_state.fielding_rotations:
+                    for inning_key in st.session_state.fielding_rotations[selected_game]:
+                        for jersey in unavailable_jerseys:
+                            if jersey in st.session_state.fielding_rotations[selected_game][inning_key]:
+                                st.session_state.fielding_rotations[selected_game][inning_key][jersey] = "OUT"
         
         # Add a summary of player availability
-        available_count = sum(edited_df["Available"])
+        available_count = sum(1 for _, row in edited_df.iterrows() if row["Available"])
         unavailable_count = len(edited_df) - available_count
-        catchers_count = sum(edited_df["Can Play Catcher"])
+        catchers_count = sum(1 for _, row in edited_df.iterrows() if row["Can Play Catcher"])
         
         st.subheader("Player Availability Summary")
         col1, col2, col3 = st.columns(3)
@@ -946,7 +1242,9 @@ elif selected_tab == "Batting Order":
         # Initialize batting orders for all games if they don't exist
         for game_id in games["Game #"].tolist():
             if game_id not in st.session_state.batting_orders:
-                st.session_state.batting_orders[game_id] = list(range(len(players)))
+                st.session_state.batting_orders[game_id] = [
+                    str(jersey) for jersey in players["Jersey Number"].tolist()
+                ]
         
         # Create a table layout with player names in the leftmost column
         # and games across the top
@@ -1002,28 +1300,32 @@ elif selected_tab == "Batting Order":
                     pass
             
             # Get availability information
-            availability = [True] * num_players  # Default all players as available
+            availability = {}  # Default all players as available
             if game_id in st.session_state.player_availability:
-                availability_data = st.session_state.player_availability[game_id]["Available"]
-                for idx, avail in enumerate(availability_data):
-                    if idx < num_players:
-                        availability[idx] = avail
+                availability = st.session_state.player_availability[game_id]["Available"]
             
             # Get batting order for this game
             if game_id in st.session_state.batting_orders:
                 batting_order = st.session_state.batting_orders[game_id]
                 
-                # Create a mapping of player index to batting position
-                order_map = {idx: pos+1 for pos, idx in enumerate(batting_order)}
-                
                 # Fill in the batting positions or OUT for unavailable players
-                for p_idx in range(num_players):
-                    if not availability[p_idx]:
+                for i, player in players.iterrows():
+                    jersey = str(player["Jersey Number"])
+                    
+                    # Check if player is unavailable
+                    is_available = availability.get(jersey, True)
+                    
+                    if not is_available:
                         # Player is unavailable - display OUT
-                        batting_grid.loc[p_idx, game_col] = "OUT"
+                        batting_grid.loc[i, game_col] = "OUT"
                     else:
                         # Player is available - display batting position
-                        batting_grid.loc[p_idx, game_col] = order_map.get(p_idx, "")
+                        try:
+                            position = batting_order.index(jersey) + 1  # Batting position is 1-based
+                            batting_grid.loc[i, game_col] = position
+                        except ValueError:
+                            # Player not found in batting order
+                            batting_grid.loc[i, game_col] = ""
         
         # Set index to start at 1
         batting_grid.index = range(1, len(batting_grid) + 1)
@@ -1053,7 +1355,7 @@ elif selected_tab == "Batting Order":
         for _, game in games.iterrows():
             game_id = game["Game #"]
             if game_id in st.session_state.player_availability:
-                unavailable_count = len(players) - sum(st.session_state.player_availability[game_id]["Available"])
+                unavailable_count = sum(1 for jersey, available in st.session_state.player_availability[game_id]["Available"].items() if not available)
                 if unavailable_count > 0:
                     st.warning(f"Game {game_id}: {unavailable_count} player(s) marked as unavailable in Player Setup.")
         
@@ -1081,54 +1383,57 @@ elif selected_tab == "Batting Order":
                         pass
                 
                 if game_col in edited_grid.columns:
-                    # Get the batting positions from the grid
-                    positions = edited_grid[game_col].tolist()
-                    
-                    # Create a mapping of batting position to player index
-                    # This handles the case where multiple players have the same position or some positions are missing
+                    # Create a mapping of batting positions to jersey numbers
                     position_map = {}
-                    for idx, pos in enumerate(positions):
-                        if pd.notna(pos) and pos != "" and pos != "OUT":
-                            # Try to convert to integer for position
-                            try:
-                                position = int(pos)
-                                if position not in position_map:
-                                    position_map[position] = idx
-                            except ValueError:
-                                # Not a number, could be "OUT" or something else, skip
-                                pass
                     
-                    # Create the batting order list (sorted by position)
-                    batting_order = []
-                    for pos in range(1, num_players + 1):
-                        if pos in position_map:
-                            batting_order.append(position_map[pos])
-                    
-                    # Determine available and unavailable players
-                    available = []
-                    unavailable = []
-                    
+                    # Get availability info
+                    availability = {}
                     if game_id in st.session_state.player_availability:
                         availability = st.session_state.player_availability[game_id]["Available"]
-                        for idx in range(num_players):
-                            if idx < len(availability):
-                                if availability[idx]:
-                                    if idx not in batting_order:
-                                        available.append(idx)
-                                else:
-                                    unavailable.append(idx)
-                    else:
-                        # If no availability info, treat all missing players as available
-                        available = [i for i in range(num_players) if i not in batting_order]
                     
-                    # Add any available players not yet in order
-                    batting_order.extend(available)
+                    # Collect the positions entered by the user
+                    for i, row in edited_grid.iterrows():
+                        pos_str = row[game_col]
+                        i_adj = i - 1  # Adjust for 1-based index
+                        
+                        if i_adj < len(players):
+                            jersey = str(players.iloc[i_adj]["Jersey Number"])
+                            
+                            # Skip if position is OUT or empty
+                            if pos_str and pos_str != "OUT" and pos_str != "nan":
+                                try:
+                                    # Convert position to integer
+                                    position = int(pos_str)
+                                    
+                                    # Add to the mapping if valid
+                                    if position > 0:
+                                        position_map[position] = jersey
+                                except ValueError:
+                                    # Not a valid number, skip it
+                                    pass
+                    
+                    # Sort by position to create the batting order
+                    sorted_positions = sorted(position_map.keys())
+                    ordered_jerseys = [position_map[pos] for pos in sorted_positions]
+                    
+                    # Get all jersey numbers
+                    all_jerseys = [str(j) for j in players["Jersey Number"].astype(str).tolist()]
+                    
+                    # Add missing players who are available but not in the batting order
+                    for jersey in all_jerseys:
+                        # Add jersey if not already in the order and is available
+                        if jersey not in ordered_jerseys:
+                            is_available = availability.get(jersey, True)
+                            if is_available:
+                                ordered_jerseys.append(jersey)
                     
                     # Add unavailable players at the end
-                    batting_order.extend(unavailable)
+                    for jersey in all_jerseys:
+                        if jersey not in ordered_jerseys:
+                            ordered_jerseys.append(jersey)
                     
-                    # Update the session state
-                    st.session_state.batting_orders[game_id] = batting_order
+                    # Update the batting order in session state
+                    st.session_state.batting_orders[game_id] = ordered_jerseys
             
             st.success("All batting orders saved!")
             
@@ -1162,7 +1467,7 @@ elif selected_tab == "Batting Order":
                     # Get the batting positions from the grid (exclude OUT values)
                     positions = []
                     for p in edited_grid[game_col].tolist():
-                        if pd.notna(p) and p != "" and p != "OUT":
+                        if pd.notna(p) and p != "" and p != "OUT" and p != "nan":
                             try:
                                 positions.append(int(p))
                             except ValueError:
@@ -1204,20 +1509,24 @@ elif selected_tab == "Batting Order":
                 available = []
                 unavailable = []
                 
-                for idx in range(len(players)):
-                    if idx < len(availability) and availability[idx]:
-                        available.append(idx)
+                for jersey in current_order:
+                    is_available = availability.get(jersey, True)
+                    if is_available:
+                        available.append(jersey)
                     else:
-                        unavailable.append(idx)
+                        unavailable.append(jersey)
                 
-                # Keep available players in their current relative order
-                available_in_order = [idx for idx in current_order if idx in available]
+                # Make sure all jerseys are accounted for
+                all_jerseys = [str(j) for j in players["Jersey Number"].astype(str).tolist()]
+                for jersey in all_jerseys:
+                    is_available = availability.get(jersey, True)
+                    if is_available and jersey not in available:
+                        available.append(jersey)
+                    elif not is_available and jersey not in unavailable:
+                        unavailable.append(jersey)
                 
-                # Add any available players not yet in order
-                available_in_order.extend([idx for idx in available if idx not in available_in_order])
-                
-                # Append unavailable players at the end
-                new_order = available_in_order + unavailable
+                # Form the new order with available players first, then unavailable
+                new_order = available + unavailable
                 
                 # Update the batting order
                 st.session_state.batting_orders[auto_game] = new_order
@@ -1259,48 +1568,46 @@ elif selected_tab == "Fielding Rotation":
         for inning in range(1, innings + 1):
             inning_key = f"Inning {inning}"
             if inning_key not in st.session_state.fielding_rotations[selected_game]:
-                num_players = len(st.session_state.roster)
-                # Initialize with default positions (cycle through positions, extras to bench)
-                default_positions = []
-                for p in range(num_players):
-                    if p < len(POSITIONS) - 1:  # All but bench
-                        default_positions.append(POSITIONS[p])
+                # Initialize with default positions for each player
+                positions = {}
+                for i, player in st.session_state.roster.iterrows():
+                    jersey = str(player["Jersey Number"])
+                    if i < len(POSITIONS) - 1:  # All but bench
+                        positions[jersey] = POSITIONS[i]
                     else:
-                        default_positions.append("Bench")
-                st.session_state.fielding_rotations[selected_game][inning_key] = default_positions
+                        positions[jersey] = "Bench"
+                st.session_state.fielding_rotations[selected_game][inning_key] = positions
         
         # Get player info
         players = st.session_state.roster.copy()
         players["Player"] = players["First Name"] + " " + players["Last Name"] + " (#" + players["Jersey Number"].astype(str) + ")"
         
         # Get availability information
-        availability = [True] * len(players)  # Default all players as available
-        can_play_catcher = [False] * len(players)  # Default no players can play catcher
+        availability = {}  # Default all players as available
+        can_play_catcher = {}  # Default no players can play catcher
         
         if selected_game in st.session_state.player_availability:
-            avail_data = st.session_state.player_availability[selected_game]["Available"]
-            for idx, avail in enumerate(avail_data):
-                if idx < len(availability):
-                    availability[idx] = avail
-            
-            catcher_data = st.session_state.player_availability[selected_game]["Can Play Catcher"]
-            for idx, can_catch in enumerate(catcher_data):
-                if idx < len(can_play_catcher):
-                    can_play_catcher[idx] = can_catch
+            availability = st.session_state.player_availability[selected_game]["Available"]
+            can_play_catcher = st.session_state.player_availability[selected_game]["Can Play Catcher"]
             
             # Add availability warning
-            unavailable_count = len(players) - sum(availability)
+            unavailable_count = sum(1 for available in availability.values() if not available)
             if unavailable_count > 0:
                 st.warning(f"{unavailable_count} player(s) marked as unavailable. They will show 'OUT' in all innings.")
             
             # Add catcher information
-            catcher_count = sum(can_play_catcher)
+            catcher_count = sum(1 for can_catch in can_play_catcher.values() if can_catch)
             if catcher_count == 0:
                 st.error("No players marked as capable of playing catcher. Please update player setup.")
             else:
                 # Get the names of available catchers
-                catcher_names = [players.iloc[i]["Player"] for i in range(len(players)) 
-                                if i < len(can_play_catcher) and can_play_catcher[i]]
+                catcher_names = []
+                for jersey, can_catch in can_play_catcher.items():
+                    if can_catch:
+                        player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                        if not player_rows.empty:
+                            catcher_names.append(player_rows.iloc[0]["Player"])
+                
                 st.info(f"Players who can play catcher: {', '.join(catcher_names)}")
         
         # Create a table for all innings at once
@@ -1320,18 +1627,24 @@ elif selected_tab == "Fielding Rotation":
         for inning in range(1, innings + 1):
             inning_key = f"Inning {inning}"
             inning_col = f"Inning {inning}"
+            
             positions = st.session_state.fielding_rotations[selected_game][inning_key]
             
-            for p_idx in range(len(players)):
-                if not availability[p_idx]:
+            for i, player in players.iterrows():
+                jersey = str(player["Jersey Number"])
+                
+                # Check availability
+                is_available = availability.get(jersey, True)
+                
+                if not is_available:
                     # Player is unavailable - display OUT
-                    fielding_grid.loc[p_idx, inning_col] = "OUT"
-                elif p_idx < len(positions):
+                    fielding_grid.loc[i, inning_col] = "OUT"
+                elif jersey in positions:
                     # Player is available - display position
-                    fielding_grid.loc[p_idx, inning_col] = positions[p_idx]
+                    fielding_grid.loc[i, inning_col] = positions[jersey]
                 else:
                     # Default to bench for any missing positions
-                    fielding_grid.loc[p_idx, inning_col] = "Bench"
+                    fielding_grid.loc[i, inning_col] = "Bench"
         
         # Set index to start at 1
         fielding_grid.index = range(1, len(fielding_grid) + 1)
@@ -1362,9 +1675,21 @@ elif selected_tab == "Fielding Rotation":
             for inning in range(1, innings + 1):
                 inning_key = f"Inning {inning}"
                 inning_col = f"Inning {inning}"
-                updated_positions = edited_grid[inning_col].tolist()
                 
-                # Save positions to session state (keep OUT for unavailable players)
+                # Create a fresh dictionary for this inning
+                updated_positions = {}
+                
+                # Map positions to jersey numbers
+                for i, row in edited_grid.iterrows():
+                    i_adj = i - 1  # Adjust for 1-based index
+                    if i_adj < len(players):
+                        jersey = str(players.iloc[i_adj]["Jersey Number"])
+                        position = row[inning_col]
+                        
+                        # Store the position
+                        updated_positions[jersey] = position
+                
+                # Save positions to session state
                 st.session_state.fielding_rotations[selected_game][inning_key] = updated_positions
             
             st.success("Fielding positions saved for all innings!")
@@ -1378,12 +1703,22 @@ elif selected_tab == "Fielding Rotation":
             for inning in range(1, innings + 1):
                 inning_key = f"Inning {inning}"
                 inning_col = f"Inning {inning}"
-                positions = edited_grid[inning_col].tolist()
+                
+                # Get positions for this inning
+                positions_dict = {}
+                for i, row in edited_grid.iterrows():
+                    i_adj = i - 1  # Adjust for 1-based index
+                    if i_adj < len(players):
+                        jersey = str(players.iloc[i_adj]["Jersey Number"])
+                        position = row[inning_col]
+                        positions_dict[jersey] = position
+                
+                # Get list of positions (excluding bench and OUT)
+                positions = [pos for pos in positions_dict.values() if pos != "Bench" and pos != "OUT"]
                 
                 # Check for duplicate positions (except bench and OUT)
-                non_bench_positions = [p for p in positions if p != "Bench" and p != "OUT"]
-                if len(non_bench_positions) != len(set(non_bench_positions)):
-                    duplicates = [p for p in non_bench_positions if non_bench_positions.count(p) > 1]
+                if len(positions) != len(set(positions)):
+                    duplicates = [p for p in positions if positions.count(p) > 1]
                     errors.append(f"Inning {inning}: Duplicate position(s): {', '.join(set(duplicates))}")
                 
                 # Check that all required positions are filled
@@ -1393,16 +1728,25 @@ elif selected_tab == "Fielding Rotation":
                     errors.append(f"Inning {inning}: Missing position(s): {', '.join(missing_positions)}")
                 
                 # Check if unavailable players are assigned field positions
-                for idx, position in enumerate(positions):
-                    if idx < len(availability) and not availability[idx] and position != "OUT":
-                        player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
-                        warnings.append(f"Inning {inning}: Unavailable player {player_name} should be marked as OUT, not {position}")
+                for jersey, position in positions_dict.items():
+                    is_available = availability.get(jersey, True)
+                    if not is_available and position != "OUT":
+                        # Find player name
+                        player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                        if not player_rows.empty:
+                            player_name = f"{player_rows.iloc[0]['First Name']} {player_rows.iloc[0]['Last Name']}"
+                            warnings.append(f"Inning {inning}: Unavailable player {player_name} should be marked as OUT, not {position}")
                 
                 # Check if catcher position is assigned to a capable player
-                for idx, position in enumerate(positions):
-                    if position == "Catcher" and idx < len(can_play_catcher) and not can_play_catcher[idx]:
-                        player_name = st.session_state.roster.iloc[idx]["First Name"] + " " + st.session_state.roster.iloc[idx]["Last Name"]
-                        warnings.append(f"Inning {inning}: Player {player_name} assigned to Catcher but not marked as capable")
+                for jersey, position in positions_dict.items():
+                    if position == "Catcher":
+                        can_catch = can_play_catcher.get(jersey, False)
+                        if not can_catch:
+                            # Find player name
+                            player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                            if not player_rows.empty:
+                                player_name = f"{player_rows.iloc[0]['First Name']} {player_rows.iloc[0]['Last Name']}"
+                                warnings.append(f"Inning {inning}: Player {player_name} assigned to Catcher but not marked as capable")
             
             # Display errors and warnings
             if errors:
@@ -1424,9 +1768,10 @@ elif selected_tab == "Fielding Rotation":
                 positions = st.session_state.fielding_rotations[selected_game][inning_key]
                 
                 # Set unavailable players to OUT
-                for idx in range(len(positions)):
-                    if idx < len(availability) and not availability[idx] and positions[idx] != "OUT":
-                        positions[idx] = "OUT"
+                for jersey in positions.keys():
+                    is_available = availability.get(jersey, True)
+                    if not is_available and positions[jersey] != "OUT":
+                        positions[jersey] = "OUT"
                         updated = True
             
             if updated:
@@ -1458,9 +1803,11 @@ elif selected_tab == "Fielding Rotation":
                 if inning_key in st.session_state.fielding_rotations[selected_game]:
                     positions = st.session_state.fielding_rotations[selected_game][inning_key]
                     
-                    for p_idx, position in enumerate(positions):
-                        if p_idx < len(players):
-                            player = players.iloc[p_idx]["Player"]
+                    for jersey, position in positions.items():
+                        # Find the player with this jersey number
+                        player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                        if not player_rows.empty:
+                            player = player_rows.iloc[0]["Player"]
                             
                             # Update total innings
                             game_fairness.loc[player, "Total Innings"] += 1
@@ -1683,18 +2030,19 @@ elif selected_tab == "Game Summary":
         
         # Check if we have data for this game
         if selected_game in st.session_state.batting_orders and selected_game in st.session_state.fielding_rotations:
-            # Get roster, batting order, and fielding data
+            # Get roster data
             players = st.session_state.roster.copy()
+            
+            # Get batting order as jersey numbers
             batting_order = st.session_state.batting_orders[selected_game]
+            
+            # Get fielding data (already jersey-based)
             fielding_data = st.session_state.fielding_rotations[selected_game]
             
             # Get player availability
-            availability = [True] * len(players)  # Default all players as available
+            availability = {}
             if selected_game in st.session_state.player_availability:
-                avail_data = st.session_state.player_availability[selected_game]["Available"]
-                for idx, avail in enumerate(avail_data):
-                    if idx < len(availability):
-                        availability[idx] = avail
+                availability = st.session_state.player_availability[selected_game]["Available"]
             
             # Create a comprehensive game summary table
             st.subheader("Game Plan")
@@ -1707,11 +2055,15 @@ elif selected_tab == "Game Summary":
             # Create empty dataframe with the columns
             summary_df = pd.DataFrame(columns=columns)
             
-            # Fill in the data for each player in the batting order
-            for batting_pos, player_idx in enumerate(batting_order, 1):
-                if player_idx < len(players):
-                    player = players.iloc[player_idx]
-                    is_available = availability[player_idx] if player_idx < len(availability) else True
+            # Display players in batting order first
+            for batting_pos, jersey in enumerate(batting_order, 1):
+                # Find the player with this jersey number
+                player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                if not player_rows.empty:
+                    player = player_rows.iloc[0]
+                    
+                    # Check availability
+                    is_available = availability.get(jersey, True)
                     
                     # Initialize row data with player info
                     row_data = {
@@ -1724,8 +2076,8 @@ elif selected_tab == "Game Summary":
                     # Add fielding positions for each inning
                     for inning in range(1, innings + 1):
                         inning_key = f"Inning {inning}"
-                        if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
-                            position = fielding_data[inning_key][player_idx]
+                        if inning_key in fielding_data and jersey in fielding_data[inning_key]:
+                            position = fielding_data[inning_key][jersey]
                             # If position isn't already OUT but player is unavailable, show OUT
                             if not is_available and position != "OUT":
                                 row_data[f"Inning {inning}"] = "OUT"
@@ -1737,38 +2089,43 @@ elif selected_tab == "Game Summary":
                     # Add this player's row to the dataframe
                     summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
             
-            # Add bench players (players not in batting order)
-            all_player_indices = set(range(len(players)))
-            batting_indices = set([idx for idx in batting_order if idx < len(players)])
-            bench_indices = all_player_indices - batting_indices
+            # Add any players that aren't in the batting order
+            all_jerseys = set(players["Jersey Number"].astype(str).tolist())
+            batting_jerseys = set(batting_order)
+            missing_jerseys = all_jerseys - batting_jerseys
             
-            for player_idx in bench_indices:
-                player = players.iloc[player_idx]
-                is_available = availability[player_idx] if player_idx < len(availability) else True
-                
-                # Initialize row data with player info
-                row_data = {
-                    "Batting Order": "OUT" if not is_available else "Bench",
-                    "Jersey #": player["Jersey Number"],
-                    "Player Name": f"{player['First Name']} {player['Last Name']}",
-                    "Available": "Yes" if is_available else "No"
-                }
-                
-                # Add fielding positions for each inning
-                for inning in range(1, innings + 1):
-                    inning_key = f"Inning {inning}"
-                    if inning_key in fielding_data and player_idx < len(fielding_data[inning_key]):
-                        position = fielding_data[inning_key][player_idx]
-                        # If position isn't already OUT but player is unavailable, show OUT
-                        if not is_available and position != "OUT":
-                            row_data[f"Inning {inning}"] = "OUT"
+            for jersey in missing_jerseys:
+                # Find the player with this jersey number
+                player_rows = players[players["Jersey Number"].astype(str) == jersey]
+                if not player_rows.empty:
+                    player = player_rows.iloc[0]
+                    
+                    # Check availability
+                    is_available = availability.get(jersey, True)
+                    
+                    # Initialize row data with player info
+                    row_data = {
+                        "Batting Order": "OUT" if not is_available else "Bench",
+                        "Jersey #": player["Jersey Number"],
+                        "Player Name": f"{player['First Name']} {player['Last Name']}",
+                        "Available": "Yes" if is_available else "No"
+                    }
+                    
+                    # Add fielding positions for each inning
+                    for inning in range(1, innings + 1):
+                        inning_key = f"Inning {inning}"
+                        if inning_key in fielding_data and jersey in fielding_data[inning_key]:
+                            position = fielding_data[inning_key][jersey]
+                            # If position isn't already OUT but player is unavailable, show OUT
+                            if not is_available and position != "OUT":
+                                row_data[f"Inning {inning}"] = "OUT"
+                            else:
+                                row_data[f"Inning {inning}"] = position
                         else:
-                            row_data[f"Inning {inning}"] = position
-                    else:
-                        row_data[f"Inning {inning}"] = "N/A"
-                
-                # Add this player's row to the dataframe
-                summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
+                            row_data[f"Inning {inning}"] = "N/A"
+                    
+                    # Add this player's row to the dataframe
+                    summary_df = pd.concat([summary_df, pd.DataFrame([row_data])], ignore_index=True)
             
             # Display the comprehensive summary table
             # Add index starting from 1 instead of 0
@@ -2097,7 +2454,7 @@ elif selected_tab == "Data Management":
                 roster_data = {
                     "First Name": ["John", "Michael", "David", "James", "Robert", "William", "Thomas", "Daniel", "Matthew", "Anthony", "Mark", "Steven", "Andrew", "Christopher"],
                     "Last Name": ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor", "Thomas"],
-                    "Jersey Number": list(range(1, 15))
+                    "Jersey Number": [str(num) for num in range(1, 15)]  # Store as strings for consistency
                 }
                 st.session_state.roster = pd.DataFrame(roster_data)
                 
@@ -2112,24 +2469,41 @@ elif selected_tab == "Data Management":
                     })
                 st.session_state.schedule = pd.DataFrame(schedule_data)
                 
-                # Initialize batting orders and fielding rotations
+                # Flag as converted
+                st.session_state.converted_to_jersey_based = True
+                
+                # Initialize batting orders and fielding rotations using jersey numbers
                 num_players = 14
+                player_jerseys = [str(j) for j in range(1, num_players + 1)]
+                
                 for game_id in range(1, 11):
-                    # Randomize batting order
-                    st.session_state.batting_orders[game_id] = list(range(num_players))
-                    np.random.shuffle(st.session_state.batting_orders[game_id])
+                    # Initialize batting order with randomized jerseys
+                    batting_order = player_jerseys.copy()
+                    np.random.shuffle(batting_order)
+                    st.session_state.batting_orders[game_id] = batting_order
                     
-                    # Initialize fielding positions
+                    # Initialize fielding positions by jersey
                     st.session_state.fielding_rotations[game_id] = {}
+                    
                     for inning in range(1, 7):
                         inning_key = f"Inning {inning}"
-                        positions = []
-                        for p in range(num_players):
-                            if p < len(POSITIONS) - 1:  # All but bench
-                                positions.append(POSITIONS[(p + inning) % (len(POSITIONS) - 1)])
+                        positions = {}
+                        
+                        # Assign positions to jerseys
+                        for idx, jersey in enumerate(player_jerseys):
+                            if idx < len(POSITIONS) - 1:  # All but bench
+                                pos_idx = (idx + inning) % (len(POSITIONS) - 1)
+                                positions[jersey] = POSITIONS[pos_idx]
                             else:
-                                positions.append("Bench")
+                                positions[jersey] = "Bench"
+                        
                         st.session_state.fielding_rotations[game_id][inning_key] = positions
+                
+                    # Initialize player availability
+                    st.session_state.player_availability[game_id] = {
+                        "Available": {jersey: True for jersey in player_jerseys},
+                        "Can Play Catcher": {jersey: idx < 2 for idx, jersey in enumerate(player_jerseys)}
+                    }
                 
                 st.success("Example data generated successfully!")
                 st.rerun()
@@ -2150,6 +2524,9 @@ elif selected_tab == "Data Management":
                     # Load the JSON data
                     json_data = uploaded_file.getvalue().decode("utf-8")
                     load_app_data(json_data)
+                    
+                    # Set the flag to indicate we're using jersey-based data
+                    st.session_state.converted_to_jersey_based = True
                     
                     st.success("Team data imported successfully!")
                     st.info("Your team data has been restored. Navigate to the other tabs to view and edit it.")
