@@ -484,6 +484,70 @@ def load_app_data(json_data):
     # Set the flag that we're using jersey-based data
     st.session_state.converted_to_jersey_based = True
 
+def sync_data_with_roster():
+    """Synchronize batting orders and fielding rotations with the current roster"""
+    if st.session_state.roster is None:
+        return
+        
+    # Get current jersey numbers from the roster
+    current_jerseys = set(st.session_state.roster["Jersey Number"].astype(str).tolist())
+    
+    # Synchronize batting orders
+    for game_id in st.session_state.batting_orders.keys():
+        # Remove jerseys that no longer exist
+        updated_order = [j for j in st.session_state.batting_orders[game_id] if j in current_jerseys]
+        
+        # Add any new jerseys that aren't in the batting order
+        missing_jerseys = [j for j in current_jerseys if j not in updated_order]
+        updated_order.extend(missing_jerseys)
+        
+        # Update the batting order
+        st.session_state.batting_orders[game_id] = updated_order
+    
+    # Synchronize fielding rotations
+    for game_id in st.session_state.fielding_rotations.keys():
+        for inning_key in st.session_state.fielding_rotations[game_id].keys():
+            positions = st.session_state.fielding_rotations[game_id][inning_key]
+            
+            # Create a new positions dictionary
+            new_positions = {}
+            
+            # Keep positions for jerseys that still exist
+            for jersey, position in positions.items():
+                if jersey in current_jerseys:
+                    new_positions[jersey] = position
+            
+            # Add bench positions for new jerseys
+            for jersey in current_jerseys:
+                if jersey not in new_positions:
+                    new_positions[jersey] = "Bench"
+            
+            # Update the positions
+            st.session_state.fielding_rotations[game_id][inning_key] = new_positions
+    
+    # Synchronize player availability
+    for game_id in st.session_state.player_availability.keys():
+        for key in ["Available", "Can Play Catcher"]:
+            if key in st.session_state.player_availability[game_id]:
+                values = st.session_state.player_availability[game_id][key]
+                
+                # Create a new values dictionary
+                new_values = {}
+                
+                # Keep values for jerseys that still exist
+                for jersey, value in values.items():
+                    if jersey in current_jerseys:
+                        new_values[jersey] = value
+                
+                # Add default values for new jerseys
+                default_value = True if key == "Available" else False
+                for jersey in current_jerseys:
+                    if jersey not in new_values:
+                        new_values[jersey] = default_value
+                
+                # Update the values
+                st.session_state.player_availability[game_id][key] = new_values
+
 # Main app layout
 # Add a sidebar with tabs
 st.sidebar.title("⚾ LineupBoss")
@@ -741,13 +805,17 @@ if selected_tab == "Team Setup":
                             # Convert Jersey Number to string type for consistency
                             st.session_state.roster["Jersey Number"] = st.session_state.roster["Jersey Number"].astype(str)
                             
-                            st.session_state.upload_roster_flag = True
-                            st.session_state.upload_success = True
-                            
                             # If this is a new roster and jersey-based conversion is needed
                             if not st.session_state.converted_to_jersey_based and st.session_state.batting_orders:
                                 convert_to_jersey_based_data()
                                 st.session_state.converted_to_jersey_based = True
+                            
+                            # Synchronize data structures with the new roster
+                            if st.session_state.batting_orders or st.session_state.fielding_rotations:
+                                sync_data_with_roster()
+                            
+                            st.session_state.upload_roster_flag = True
+                            st.session_state.upload_success = True
                         else:
                             st.session_state.upload_error = message
                     except Exception as e:
@@ -820,6 +888,10 @@ if selected_tab == "Team Setup":
                 st.session_state.roster.reset_index(drop=True, inplace=True)
                 # Update the previous roster for next comparison
                 st.session_state.previous_roster = st.session_state.roster.copy()
+                
+                # Synchronize data structures with the updated roster
+                sync_data_with_roster()
+                
                 st.success("Roster changes saved!")
             
             # Add roster statistics
