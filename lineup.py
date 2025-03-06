@@ -421,6 +421,35 @@ def save_app_data():
                 return obj.isoformat()
             return super().default(obj)
     
+    # Clean up the data structures before saving
+    if st.session_state.roster is not None:
+        # Get the current set of valid jersey numbers
+        current_jerseys = set(st.session_state.roster["Jersey Number"].astype(str).tolist())
+        
+        # Clean up the batting orders 
+        for game_id in st.session_state.batting_orders:
+            # Only keep jerseys that are in the current roster
+            st.session_state.batting_orders[game_id] = [j for j in st.session_state.batting_orders[game_id] if j in current_jerseys]
+        
+        # Clean up fielding rotations
+        for game_id in st.session_state.fielding_rotations:
+            for inning_key in st.session_state.fielding_rotations[game_id]:
+                # Only keep positions for current roster jerseys
+                st.session_state.fielding_rotations[game_id][inning_key] = {
+                    jersey: position for jersey, position in st.session_state.fielding_rotations[game_id][inning_key].items()
+                    if jersey in current_jerseys
+                }
+        
+        # Clean up player availability
+        for game_id in st.session_state.player_availability:
+            for key in ["Available", "Can Play Catcher"]:
+                if key in st.session_state.player_availability[game_id]:
+                    # Only keep data for current roster jerseys
+                    st.session_state.player_availability[game_id][key] = {
+                        jersey: value for jersey, value in st.session_state.player_availability[game_id][key].items()
+                        if jersey in current_jerseys
+                    }
+    
     # Create data dictionary with all session state
     data = {
         "team_info": st.session_state.team_info if 'team_info' in st.session_state else {},
