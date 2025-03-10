@@ -56,10 +56,26 @@ streamlit run lineup.py
 
 ## Data Storage
 
-LineupBoss stores all data locally in your browser session. To persist data between sessions:
-1. Export your team data using the Data Management tab
-2. Store the JSON file securely
-3. Import the file when you want to continue working on your lineups
+LineupBoss stores all data in a PostgreSQL database:
+1. Changes are saved automatically as you work
+2. Your data persists between sessions without manual exports/imports
+3. You can access your data from any device
+
+### Local Development
+For local development, set up a PostgreSQL database and create a `.env` file with:
+```
+DATABASE_URL=postgresql://username:password@hostname/database
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+### Streamlit Cloud Deployment
+To deploy to Streamlit Cloud:
+1. Fork/push this repository to GitHub
+2. Create a new app in Streamlit Cloud pointing to your repository
+3. Add the following secrets in the Streamlit Cloud dashboard:
+   - `DATABASE_URL`: Your PostgreSQL connection string
+   - `ANTHROPIC_API_KEY`: Your Anthropic API key (if using fielding generation feature)
+4. Deploy your app
 
 ## Requirements
 
